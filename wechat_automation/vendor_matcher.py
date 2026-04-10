@@ -39,7 +39,7 @@ class VendorMatcher:
         self._loaded = False
 
     def _load(self) -> None:
-        """Lazy-load vendor and people data from Firestore."""
+        """Lazy-load vendor and people data from Firestore + local aliases."""
         if self._loaded:
             return
         try:
@@ -54,6 +54,16 @@ class VendorMatcher:
                             self._vendor_names[alias.lower()] = v
         except Exception as e:
             logger.warning("Could not load go_vendors: %s", e)
+
+        # Inject centralized vendor aliases
+        from wechat_automation.vendor_aliases import VENDOR_ALIASES
+        for alias, canonical in VENDOR_ALIASES.items():
+            alias_lower = alias.lower()
+            if alias_lower not in self._vendor_names:
+                self._vendor_names[alias_lower] = {
+                    "_doc_id": canonical.replace(" ", "_"),
+                    "name": canonical,
+                }
 
         try:
             self._people = firestore_store.get_people_contacts()
