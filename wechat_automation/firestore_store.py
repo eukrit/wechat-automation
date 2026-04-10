@@ -72,15 +72,23 @@ def search_files(
     status: str = "",
     limit: int = 50,
 ) -> list[dict[str, Any]]:
+    """Search files with optional filters. Uses client-side filtering to avoid composite indexes."""
     query = _db().collection("wechat_files")
-    if vendor_id:
-        query = query.where("vendor_id", "==", vendor_id)
+    # Use a single server-side filter to avoid composite index requirements
     if file_type:
-        query = query.where("file_type", "==", file_type)
-    if status:
-        query = query.where("status", "==", status)
-    query = query.order_by("ingested_at", direction=firestore.Query.DESCENDING).limit(limit)
-    return [doc.to_dict() for doc in query.stream()]
+        query = query.where(filter=firestore.FieldFilter("file_type", "==", file_type))
+    elif vendor_id:
+        query = query.where(filter=firestore.FieldFilter("vendor_id", "==", vendor_id))
+    elif status:
+        query = query.where(filter=firestore.FieldFilter("status", "==", status))
+    results = [doc.to_dict() for doc in query.limit(500).stream()]
+    # Client-side filtering for additional criteria
+    if file_type and vendor_id:
+        results = [r for r in results if r.get("vendor_id") == vendor_id]
+    if file_type and status:
+        results = [r for r in results if r.get("status") == status]
+    results.sort(key=lambda r: r.get("ingested_at", ""), reverse=True)
+    return results[:limit]
 
 
 def list_recent_files(limit: int = 30) -> list[dict[str, Any]]:
