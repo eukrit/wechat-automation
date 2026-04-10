@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.db
+*.key
+*.json
+!pyproject.toml
+venv/
+.venv/

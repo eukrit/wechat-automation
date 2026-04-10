@@ -1,0 +1,47 @@
+steps:
+  # Build MCP server Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-mcp:$COMMIT_SHA'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-mcp:latest'
+      - '-f'
+      - 'mcp_server/Dockerfile'
+      - '.'
+    id: 'build-mcp'
+
+  # Push images
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-mcp:$COMMIT_SHA']
+    waitFor: ['build-mcp']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-mcp:latest']
+    waitFor: ['build-mcp']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'wechat-mcp'
+      - '--image'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-mcp:$COMMIT_SHA'
+      - '--region'
+      - 'asia-southeast1'
+      - '--platform'
+      - 'managed'
+      - '--service-account'
+      - 'claude@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars'
+      - 'GCP_PROJECT_ID=ai-agents-go,FIRESTORE_DATABASE=wechat-documents,GCS_BUCKET=wechat-documents-attachments,SHIPPING_FIRESTORE_DATABASE=shipping-automation'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '512Mi'
+    waitFor: ['build-mcp']
+
+options:
+  logging: CLOUD_LOGGING_ONLY
