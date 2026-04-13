@@ -101,9 +101,13 @@ def extract_products_gemini(
     try:
         logger.info("Gemini processing %s (%.0fMB)...", path.name, file_size_mb)
 
-        # Read file as bytes and create Part
-        file_bytes = path.read_bytes()
-        file_part = Part.from_data(data=file_bytes, mime_type=mime_type)
+        # For large files (>90MB), upload to GCS first then reference by URI
+        # Inline Part.from_data has a ~500MB payload limit but fails around 100MB
+        if file_size_mb > 20:
+            file_part = _upload_via_gcs(path, mime_type)
+        else:
+            file_bytes = path.read_bytes()
+            file_part = Part.from_data(data=file_bytes, mime_type=mime_type)
 
         context = f"Vendor: {vendor_name}\n" if vendor_name else ""
         prompt = f"""{context}Analyze this document and extract all products.
@@ -125,12 +129,46 @@ def extract_products_gemini(
                 vendor_name=vendor_name,
             )
 
+        # Cleanup GCS temp file after Gemini has read it
+        if file_size_mb > 20:
+            _cleanup_gcs_temp(path.name)
+
         logger.info("Gemini extracted %d products from %s", len(products), path.name)
         return products
 
     except Exception as e:
         logger.error("Gemini extraction failed for %s: %s", path.name, e)
+        if file_size_mb > 20:
+            _cleanup_gcs_temp(path.name)
         return []
+
+
+_GCS_BUCKET = "wechat-documents-attachments"
+
+
+def _upload_via_gcs(filepath: Path, mime_type: str):
+    """Upload large file to GCS temp location, return Vertex AI Part referencing it."""
+    from google.cloud import storage
+    from vertexai.generative_models import Part
+
+    gcs_path = f"_gemini_temp/{filepath.name}"
+    client = storage.Client(project=GCP_PROJECT)
+    blob = client.bucket(_GCS_BUCKET).blob(gcs_path)
+
+    logger.info("Uploading %s to GCS for Gemini (%.0fMB)...", filepath.name, filepath.stat().st_size / 1024 / 1024)
+    blob.upload_from_filename(str(filepath), content_type=mime_type)
+
+    return Part.from_uri(uri=f"gs://{_GCS_BUCKET}/{gcs_path}", mime_type=mime_type)
+
+
+def _cleanup_gcs_temp(filename: str) -> None:
+    """Delete temp file from GCS after Gemini processing."""
+    try:
+        from google.cloud import storage
+        client = storage.Client(project=GCP_PROJECT)
+        client.bucket(_GCS_BUCKET).blob(f"_gemini_temp/{filename}").delete()
+    except Exception:
+        pass
 
 
 def _parse_gemini_response(
