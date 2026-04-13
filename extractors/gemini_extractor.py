@@ -1,10 +1,9 @@
-"""Extract products from any file type using Gemini 2.5 Flash.
+"""Extract products from any file type using Gemini 2.5 Flash via Vertex AI.
 
-Handles: PDF, PPTX, DOCX, images (JPG/PNG), Excel (as fallback).
-Gemini 2.5 Flash: best balance of speed, cost, and quality for structured extraction.
-- Input: $0.15/1M tokens
-- Output: $0.60/1M tokens
-- Supports native PDF/image upload via File API
+Uses GCP Service Account (GOOGLE_APPLICATION_CREDENTIALS) — no API key needed.
+Project: ai-agents-go, Region: asia-southeast1.
+
+Handles: PDF, PPTX, DOCX, images (JPG/PNG/WEBP/BMP/GIF).
 """
 
 from __future__ import annotations
@@ -12,8 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from wechat_automation.models import WeChatProduct
@@ -21,8 +18,10 @@ from wechat_automation.models import WeChatProduct
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "gemini-2.5-flash"
+GCP_PROJECT = "ai-agents-go"
+GCP_LOCATION = "asia-southeast1"
 
-# MIME types for Gemini File API upload
+# MIME types for Vertex AI
 _MIME_MAP = {
     "pdf": "application/pdf",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -58,23 +57,27 @@ If the document contains no products (e.g., shipping docs, certificates), return
 
 Return ONLY the JSON array, no other text."""
 
+_initialized = False
+
+
+def _init_vertex():
+    """Initialize Vertex AI once."""
+    global _initialized
+    if _initialized:
+        return
+    import vertexai
+    vertexai.init(project=GCP_PROJECT, location=GCP_LOCATION)
+    _initialized = True
+
 
 def extract_products_gemini(
     filepath: str | Path,
     source_file_id: str = "",
     vendor_id: str = "",
     vendor_name: str = "",
-    max_pages: int = 50,
 ) -> list[WeChatProduct]:
-    """Extract products from any supported file using Gemini 2.5 Flash.
-
-    Supports: PDF, PPTX, DOCX, DOC, images (JPG/PNG/WEBP/BMP/GIF).
-    """
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        logger.error("google-generativeai not installed")
-        return []
+    """Extract products from any supported file using Gemini 2.5 Flash via Vertex AI."""
+    from vertexai.generative_models import GenerativeModel, Part
 
     path = Path(filepath)
     if not path.exists():
@@ -88,30 +91,27 @@ def extract_products_gemini(
         return []
 
     file_size_mb = path.stat().st_size / (1024 * 1024)
-
-    # Gemini File API limit is 2GB, but very large files take longer
     if file_size_mb > 700:
         logger.warning("File too large for Gemini (%dMB): %s", int(file_size_mb), path.name)
         return []
 
-    model = genai.GenerativeModel(MODEL_NAME)
+    _init_vertex()
+    model = GenerativeModel(MODEL_NAME)
 
     try:
-        # Upload file to Gemini
-        logger.info("Uploading %s (%.0fMB) to Gemini...", path.name, file_size_mb)
-        uploaded = genai.upload_file(path, mime_type=mime_type)
+        logger.info("Gemini processing %s (%.0fMB)...", path.name, file_size_mb)
 
-        # Wait for file to be processed (large files need time)
-        _wait_for_file(genai, uploaded)
+        # Read file as bytes and create Part
+        file_bytes = path.read_bytes()
+        file_part = Part.from_data(data=file_bytes, mime_type=mime_type)
 
-        # Build prompt
         context = f"Vendor: {vendor_name}\n" if vendor_name else ""
         prompt = f"""{context}Analyze this document and extract all products.
 
 {_EXTRACTION_PROMPT}"""
 
         response = model.generate_content(
-            [uploaded, prompt],
+            [file_part, prompt],
             generation_config={"temperature": 0.1, "max_output_tokens": 65536},
         )
 
@@ -125,31 +125,12 @@ def extract_products_gemini(
                 vendor_name=vendor_name,
             )
 
-        # Clean up
-        try:
-            genai.delete_file(uploaded.name)
-        except Exception:
-            pass
-
-        logger.info("Gemini extracted %d products from %s (%.0fMB)", len(products), path.name, file_size_mb)
+        logger.info("Gemini extracted %d products from %s", len(products), path.name)
         return products
 
     except Exception as e:
         logger.error("Gemini extraction failed for %s: %s", path.name, e)
         return []
-
-
-def _wait_for_file(genai, uploaded, timeout: int = 120) -> None:
-    """Wait for Gemini File API to finish processing the uploaded file."""
-    start = time.time()
-    while time.time() - start < timeout:
-        f = genai.get_file(uploaded.name)
-        if f.state.name == "ACTIVE":
-            return
-        if f.state.name == "FAILED":
-            raise RuntimeError(f"File processing failed: {uploaded.name}")
-        time.sleep(2)
-    raise TimeoutError(f"File processing timed out after {timeout}s: {uploaded.name}")
 
 
 def _parse_gemini_response(
