@@ -1,7 +1,10 @@
-"""Extract products from image-heavy PDFs using Gemini Vision.
+"""Extract products from any file type using Gemini 2.5 Flash.
 
-Sends PDF pages as images to Gemini 2.5 Flash for structured product extraction.
-Used as fallback when pdfplumber finds no usable tables.
+Handles: PDF, PPTX, DOCX, images (JPG/PNG), Excel (as fallback).
+Gemini 2.5 Flash: best balance of speed, cost, and quality for structured extraction.
+- Input: $0.15/1M tokens
+- Output: $0.60/1M tokens
+- Supports native PDF/image upload via File API
 """
 
 from __future__ import annotations
@@ -17,20 +20,41 @@ from wechat_automation.models import WeChatProduct
 
 logger = logging.getLogger(__name__)
 
-_EXTRACTION_PROMPT = """You are a product data extractor. Analyze this catalog/price list page and extract all products shown.
+MODEL_NAME = "gemini-2.5-flash"
 
-For each product, return a JSON array with objects containing these fields:
-- "product_name": product name (English preferred, include Chinese if bilingual)
-- "sku": model number or SKU code
-- "description": brief description
-- "dimensions": size/dimensions if shown
-- "material": material if shown
-- "unit_price": numeric price (just the number, no currency symbol)
-- "currency": "USD", "CNY", "EUR", or "THB"
-- "category": product category (e.g., "Lighting", "Furniture", "Playground Equipment")
+# MIME types for Gemini File API upload
+_MIME_MAP = {
+    "pdf": "application/pdf",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xls": "application/vnd.ms-excel",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "doc": "application/msword",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "bmp": "image/bmp",
+    "gif": "image/gif",
+}
 
-Only include products with at least a name or SKU. Skip headers, footers, and non-product content.
-If no products are found on this page, return an empty array: []
+_EXTRACTION_PROMPT = """You are a product data extractor for a procurement company. Analyze this document thoroughly and extract ALL products, items, or line items shown.
+
+For each product found, return a JSON object with these fields:
+- "product_name": product name (English preferred, include Chinese name if bilingual)
+- "sku": model number, SKU, item code, or catalog number
+- "description": brief description of the product
+- "dimensions": size/dimensions if shown (e.g., "1200x600x400mm")
+- "material": material composition if shown
+- "unit_price": numeric price only (no currency symbol). Use 0 if not shown.
+- "currency": "USD", "CNY", "EUR", or "THB" (default "CNY" for Chinese documents)
+- "category": product category (e.g., "Lighting", "Furniture", "Playground Equipment", "Flooring", "Hardware")
+- "weight_kg": weight in kg if shown, else 0
+- "moq": minimum order quantity if shown, else 0
+- "color": color/finish if shown
+
+Return a JSON array of these objects. Extract EVERY product visible — catalogs may have many items per page.
+If the document contains no products (e.g., shipping docs, certificates), return: []
 
 Return ONLY the JSON array, no other text."""
 
@@ -40,19 +64,16 @@ def extract_products_gemini(
     source_file_id: str = "",
     vendor_id: str = "",
     vendor_name: str = "",
-    max_pages: int = 10,
-    rate_limit_delay: float = 6.0,
+    max_pages: int = 50,
 ) -> list[WeChatProduct]:
-    """Extract products from a PDF using Gemini Vision.
+    """Extract products from any supported file using Gemini 2.5 Flash.
 
-    Args:
-        max_pages: Maximum pages to process (to control API costs).
-        rate_limit_delay: Seconds between API calls (10 req/min = 6s).
+    Supports: PDF, PPTX, DOCX, DOC, images (JPG/PNG/WEBP/BMP/GIF).
     """
     try:
         import google.generativeai as genai
     except ImportError:
-        logger.error("google-generativeai not installed. Run: pip install google-generativeai")
+        logger.error("google-generativeai not installed")
         return []
 
     path = Path(filepath)
@@ -60,32 +81,41 @@ def extract_products_gemini(
         logger.warning("File not found: %s", path)
         return []
 
-    # Configure Gemini
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    ext = path.suffix.lstrip(".").lower()
+    mime_type = _MIME_MAP.get(ext)
+    if not mime_type:
+        logger.debug("Unsupported extension for Gemini: .%s", ext)
+        return []
 
-    # Read PDF bytes
-    pdf_bytes = path.read_bytes()
-    file_size_mb = len(pdf_bytes) / (1024 * 1024)
+    file_size_mb = path.stat().st_size / (1024 * 1024)
 
-    # For very large PDFs, limit pages further
-    if file_size_mb > 50:
-        max_pages = min(max_pages, 5)
-    elif file_size_mb > 20:
-        max_pages = min(max_pages, 8)
+    # Gemini File API limit is 2GB, but very large files take longer
+    if file_size_mb > 700:
+        logger.warning("File too large for Gemini (%dMB): %s", int(file_size_mb), path.name)
+        return []
 
-    all_products: list[WeChatProduct] = []
+    model = genai.GenerativeModel(MODEL_NAME)
 
     try:
-        # Upload PDF to Gemini
-        uploaded = genai.upload_file(path, mime_type="application/pdf")
+        # Upload file to Gemini
+        logger.info("Uploading %s (%.0fMB) to Gemini...", path.name, file_size_mb)
+        uploaded = genai.upload_file(path, mime_type=mime_type)
 
-        # Process pages - Gemini handles multi-page PDFs natively
-        prompt = f"""Analyze this product catalog/price list PDF (up to first {max_pages} pages).
+        # Wait for file to be processed (large files need time)
+        _wait_for_file(genai, uploaded)
+
+        # Build prompt
+        context = f"Vendor: {vendor_name}\n" if vendor_name else ""
+        prompt = f"""{context}Analyze this document and extract all products.
 
 {_EXTRACTION_PROMPT}"""
 
-        response = model.generate_content([uploaded, prompt])
+        response = model.generate_content(
+            [uploaded, prompt],
+            generation_config={"temperature": 0.1, "max_output_tokens": 65536},
+        )
 
+        products = []
         if response.text:
             products = _parse_gemini_response(
                 response.text,
@@ -94,20 +124,32 @@ def extract_products_gemini(
                 vendor_id=vendor_id,
                 vendor_name=vendor_name,
             )
-            all_products.extend(products)
 
-        # Clean up uploaded file
+        # Clean up
         try:
             genai.delete_file(uploaded.name)
         except Exception:
             pass
 
+        logger.info("Gemini extracted %d products from %s (%.0fMB)", len(products), path.name, file_size_mb)
+        return products
+
     except Exception as e:
         logger.error("Gemini extraction failed for %s: %s", path.name, e)
         return []
 
-    logger.info("Gemini extracted %d products from %s", len(all_products), path.name)
-    return all_products
+
+def _wait_for_file(genai, uploaded, timeout: int = 120) -> None:
+    """Wait for Gemini File API to finish processing the uploaded file."""
+    start = time.time()
+    while time.time() - start < timeout:
+        f = genai.get_file(uploaded.name)
+        if f.state.name == "ACTIVE":
+            return
+        if f.state.name == "FAILED":
+            raise RuntimeError(f"File processing failed: {uploaded.name}")
+        time.sleep(2)
+    raise TimeoutError(f"File processing timed out after {timeout}s: {uploaded.name}")
 
 
 def _parse_gemini_response(
@@ -118,7 +160,6 @@ def _parse_gemini_response(
     vendor_name: str,
 ) -> list[WeChatProduct]:
     """Parse Gemini's JSON response into WeChatProduct objects."""
-    # Extract JSON array from response (may have markdown fencing)
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -127,13 +168,12 @@ def _parse_gemini_response(
     try:
         items = json.loads(text)
     except json.JSONDecodeError:
-        # Try to find JSON array in the text
         match = re.search(r"\[.*\]", text, re.DOTALL)
         if match:
             try:
                 items = json.loads(match.group())
             except json.JSONDecodeError:
-                logger.warning("Could not parse Gemini response as JSON")
+                logger.warning("Could not parse Gemini response as JSON for %s", source_filename)
                 return []
         else:
             return []
@@ -146,8 +186,8 @@ def _parse_gemini_response(
         if not isinstance(item, dict):
             continue
 
-        name = item.get("product_name", "") or item.get("name", "")
-        sku = item.get("sku", "") or item.get("model", "")
+        name = str(item.get("product_name", "") or item.get("name", ""))
+        sku = str(item.get("sku", "") or item.get("model", ""))
         if not name and not sku:
             continue
 
@@ -157,23 +197,38 @@ def _parse_gemini_response(
         except (ValueError, TypeError):
             pass
 
+        weight = 0.0
+        try:
+            weight = float(item.get("weight_kg", 0) or 0)
+        except (ValueError, TypeError):
+            pass
+
+        moq = 0
+        try:
+            moq = int(float(item.get("moq", 0) or 0))
+        except (ValueError, TypeError):
+            pass
+
         products.append(WeChatProduct(
-            product_name=str(name),
-            product_name_zh="" if not re.search(r"[\u4e00-\u9fff]", str(name)) else str(name),
+            product_name=name,
+            product_name_zh=name if re.search(r"[\u4e00-\u9fff]", name) else "",
             source_file_id=source_file_id,
             source_filename=source_filename,
             source_page=0,
-            sku=str(sku),
+            sku=sku,
             description=str(item.get("description", "")),
             category=str(item.get("category", "")),
             material=str(item.get("material", "")),
             dimensions=str(item.get("dimensions", "")),
+            weight_kg=weight,
+            color=str(item.get("color", "")),
             unit_price=price,
             currency=str(item.get("currency", "CNY")),
+            moq=moq,
             vendor_id=vendor_id,
             vendor_name=vendor_name,
             extraction_method="gemini_vision",
-            extraction_confidence=0.6,
+            extraction_confidence=0.7,
         ))
 
     return products
