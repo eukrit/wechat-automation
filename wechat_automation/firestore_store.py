@@ -11,9 +11,11 @@ from google.cloud import firestore
 from config.settings import get_settings
 from wechat_automation.models import (
     IngestionEvent,
+    SyncStatus,
     WeChatContactMapping,
     WeChatFile,
     WeChatProduct,
+    WeChatVendor,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,6 +172,55 @@ def log_event(event: IngestionEvent) -> None:
     _db().collection("ingestion_log").document().set(
         event.model_dump(mode="json")
     )
+
+
+# ---------------------------------------------------------------------------
+# wechat_vendors collection
+# ---------------------------------------------------------------------------
+
+def upsert_vendor(vendor: WeChatVendor) -> None:
+    vendor.updated_at = datetime.now(timezone.utc)
+    _db().collection("wechat_vendors").document(vendor.vendor_id).set(
+        vendor.model_dump(mode="json")
+    )
+
+
+def get_vendor(vendor_id: str) -> WeChatVendor | None:
+    doc = _db().collection("wechat_vendors").document(vendor_id).get()
+    if doc.exists:
+        return WeChatVendor(**doc.to_dict())
+    return None
+
+
+def list_vendors(limit: int = 200) -> list[dict[str, Any]]:
+    return [
+        doc.to_dict()
+        for doc in _db().collection("wechat_vendors")
+        .order_by("file_count", direction=firestore.Query.DESCENDING)
+        .limit(limit)
+        .stream()
+    ]
+
+
+# ---------------------------------------------------------------------------
+# sync_status collection
+# ---------------------------------------------------------------------------
+
+def upsert_sync_status(status: SyncStatus) -> None:
+    _db().collection("sync_status").document("latest").set(
+        status.model_dump(mode="json")
+    )
+    # Also write history entry
+    _db().collection("sync_status").document(status.sync_id).set(
+        status.model_dump(mode="json")
+    )
+
+
+def get_sync_status() -> SyncStatus | None:
+    doc = _db().collection("sync_status").document("latest").get()
+    if doc.exists:
+        return SyncStatus(**doc.to_dict())
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -137,6 +137,85 @@ class WeChatContactMapping(BaseModel):
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
+class WeChatVendor(BaseModel):
+    """Vendor profile aggregating all files and products.
+
+    Collection: wechat_vendors
+    Document ID: sanitized vendor name (lowercase, underscores).
+    """
+
+    vendor_id: str  # doc ID
+    vendor_name: str
+    aliases: list[str] = Field(default_factory=list)
+
+    # Cross-references to other DBs
+    go_vendor_id: str = ""  # FK -> go_vendors in shipping-automation DB
+    peak_contact_code: str = ""  # FK -> peak_contacts
+    people_contact_id: str = ""  # FK -> people_contacts
+
+    # File references (list of file_ids)
+    file_ids: list[str] = Field(default_factory=list)
+    file_count: int = 0
+    product_count: int = 0
+
+    # File type breakdown
+    catalogs: int = 0
+    quotations: int = 0
+    invoices: int = 0
+    purchase_orders: int = 0
+    price_lists: int = 0
+    drawings: int = 0
+    certificates: int = 0
+    images: int = 0
+    other_files: int = 0
+
+    # Processing status
+    files_extracted: int = 0  # files with products extracted
+    files_pending: int = 0  # files not yet extracted
+    last_file_date: str = ""  # most recent file date
+    total_size_bytes: int = 0
+
+    # Categories (from product data)
+    categories: list[str] = Field(default_factory=list)
+
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class SyncStatus(BaseModel):
+    """Tracks sync/processing pipeline status.
+
+    Collection: sync_status
+    Document ID: "latest" (singleton) or timestamp-based for history.
+    """
+
+    sync_id: str = ""
+    status: str = "running"  # running | completed | failed
+    started_at: datetime = Field(default_factory=_utcnow)
+    completed_at: datetime | None = None
+
+    # Ingestion stats
+    files_scanned: int = 0
+    files_new: int = 0
+    files_skipped_duplicate: int = 0
+
+    # Vendor matching stats
+    files_vendor_matched: int = 0
+    files_unmatched: int = 0
+
+    # Product extraction stats
+    files_extracted: int = 0
+    products_new: int = 0
+    extraction_errors: int = 0
+
+    # Totals (cumulative)
+    total_files: int = 0
+    total_products: int = 0
+    total_vendors: int = 0
+
+    error_details: list[str] = Field(default_factory=list)
+
+
 class IngestionEvent(BaseModel):
     """Audit trail for ingestion pipeline.
 
