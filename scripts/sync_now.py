@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 EXCEL_EXTENSIONS = {"xlsx", "xls"}
 PDF_EXTENSIONS = {"pdf"}
-EXTRACTABLE_EXTS = EXCEL_EXTENSIONS | PDF_EXTENSIONS
+PPTX_EXTENSIONS = {"pptx"}
+GEMINI_EXTENSIONS = {"docx", "doc", "jpg", "jpeg", "png", "webp"}
+EXTRACTABLE_EXTS = EXCEL_EXTENSIONS | PDF_EXTENSIONS | PPTX_EXTENSIONS | GEMINI_EXTENSIONS
 EXTRACTABLE_TYPES = {"price_list", "spreadsheet", "catalog", "quotation", "document", "invoice", "po"}
 
 
@@ -66,6 +68,21 @@ def extract_products_for_file(file_doc: dict) -> int:
                     )
                 except Exception as e:
                     logger.debug("Gemini fallback failed for %s: %s", filename, e)
+        elif ext == "pptx":
+            from extractors.pptx_extractor import extract_products_from_pptx
+            products = extract_products_from_pptx(
+                filepath=str(local_path), source_file_id=file_id,
+                vendor_id=vendor_id, vendor_name=vendor_name,
+            )
+        elif ext in ("docx", "doc", "jpg", "jpeg", "png", "webp"):
+            try:
+                from extractors.gemini_extractor import extract_products_gemini
+                products = extract_products_gemini(
+                    filepath=str(local_path), source_file_id=file_id,
+                    vendor_id=vendor_id, vendor_name=vendor_name,
+                )
+            except Exception as e:
+                logger.debug("Gemini failed for %s: %s", filename, e)
     except Exception as e:
         logger.warning("Extraction failed for %s: %s", filename, e)
         return 0

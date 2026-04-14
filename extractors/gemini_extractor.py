@@ -91,9 +91,12 @@ def extract_products_gemini(
         return []
 
     file_size_mb = path.stat().st_size / (1024 * 1024)
-    if file_size_mb > 700:
-        logger.warning("File too large for Gemini (%dMB): %s", int(file_size_mb), path.name)
-        return []
+
+    # Oversized PDFs (>50MB): split into chunks and process each
+    if ext == "pdf" and file_size_mb > 45:
+        return _extract_chunked_pdf(
+            path, file_size_mb, source_file_id, vendor_id, vendor_name,
+        )
 
     _init_vertex()
     model = GenerativeModel(MODEL_NAME)
@@ -101,8 +104,6 @@ def extract_products_gemini(
     try:
         logger.info("Gemini processing %s (%.0fMB)...", path.name, file_size_mb)
 
-        # For large files (>90MB), upload to GCS first then reference by URI
-        # Inline Part.from_data has a ~500MB payload limit but fails around 100MB
         if file_size_mb > 20:
             file_part = _upload_via_gcs(path, mime_type)
         else:
@@ -129,7 +130,6 @@ def extract_products_gemini(
                 vendor_name=vendor_name,
             )
 
-        # Cleanup GCS temp file after Gemini has read it
         if file_size_mb > 20:
             _cleanup_gcs_temp(path.name)
 
@@ -143,15 +143,102 @@ def extract_products_gemini(
         return []
 
 
+def _extract_chunked_pdf(
+    filepath: Path,
+    file_size_mb: float,
+    source_file_id: str,
+    vendor_id: str,
+    vendor_name: str,
+    max_pages_per_chunk: int = 30,
+) -> list[WeChatProduct]:
+    """Split a large PDF into chunks, send each to Gemini, merge results."""
+    import tempfile
+    from pypdf import PdfReader, PdfWriter
+    from vertexai.generative_models import GenerativeModel, Part
+
+    _init_vertex()
+    model = GenerativeModel(MODEL_NAME)
+
+    try:
+        reader = PdfReader(str(filepath))
+        total_pages = len(reader.pages)
+    except Exception as e:
+        logger.error("Cannot read PDF %s: %s", filepath.name, e)
+        return []
+
+    logger.info("Splitting %s (%.0fMB, %d pages) into chunks of %d pages...",
+                filepath.name, file_size_mb, total_pages, max_pages_per_chunk)
+
+    all_products: list[WeChatProduct] = []
+    chunk_num = 0
+
+    for start in range(0, total_pages, max_pages_per_chunk):
+        end = min(start + max_pages_per_chunk, total_pages)
+        chunk_num += 1
+
+        # Write chunk to temp file
+        writer = PdfWriter()
+        for i in range(start, end):
+            writer.add_page(reader.pages[i])
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            writer.write(tmp)
+            tmp_path = Path(tmp.name)
+
+        chunk_size_mb = tmp_path.stat().st_size / (1024 * 1024)
+        logger.info("  Chunk %d: pages %d-%d (%.0fMB)", chunk_num, start + 1, end, chunk_size_mb)
+
+        try:
+            # Upload chunk to GCS
+            if chunk_size_mb > 20:
+                chunk_name = f"{filepath.stem}_chunk{chunk_num}.pdf"
+                file_part = _upload_via_gcs(tmp_path, "application/pdf", gcs_name=chunk_name)
+            else:
+                file_part = Part.from_data(data=tmp_path.read_bytes(), mime_type="application/pdf")
+
+            context = f"Vendor: {vendor_name}\n" if vendor_name else ""
+            prompt = f"""{context}Analyze this catalog chunk (pages {start+1}-{end} of {total_pages}) and extract all products.
+
+{_EXTRACTION_PROMPT}"""
+
+            response = model.generate_content(
+                [file_part, prompt],
+                generation_config={"temperature": 0.1, "max_output_tokens": 65536},
+            )
+
+            if response.text:
+                products = _parse_gemini_response(
+                    response.text,
+                    source_file_id=source_file_id,
+                    source_filename=filepath.name,
+                    vendor_id=vendor_id,
+                    vendor_name=vendor_name,
+                )
+                all_products.extend(products)
+                logger.info("    -> %d products from chunk %d", len(products), chunk_num)
+
+            if chunk_size_mb > 20:
+                _cleanup_gcs_temp(f"{filepath.stem}_chunk{chunk_num}.pdf")
+
+        except Exception as e:
+            logger.error("    Chunk %d failed: %s", chunk_num, e)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    logger.info("Gemini extracted %d total products from %s (%d chunks)",
+                len(all_products), filepath.name, chunk_num)
+    return all_products
+
+
 _GCS_BUCKET = "wechat-documents-attachments"
 
 
-def _upload_via_gcs(filepath: Path, mime_type: str):
+def _upload_via_gcs(filepath: Path, mime_type: str, gcs_name: str = ""):
     """Upload large file to GCS temp location, return Vertex AI Part referencing it."""
     from google.cloud import storage
     from vertexai.generative_models import Part
 
-    gcs_path = f"_gemini_temp/{filepath.name}"
+    gcs_path = f"_gemini_temp/{gcs_name or filepath.name}"
     client = storage.Client(project=GCP_PROJECT)
     blob = client.bucket(_GCS_BUCKET).blob(gcs_path)
 

@@ -74,7 +74,15 @@ def process_one_file(file_doc: dict, use_gemini: bool = True) -> int:
                     vendor_id=vendor_id, vendor_name=vendor_name,
                 )
 
-        # Strategy 3: PPTX, DOCX, images — Gemini only
+        # Strategy 3: PPTX — extract text/images then Gemini
+        elif ext == "pptx":
+            from extractors.pptx_extractor import extract_products_from_pptx
+            products = extract_products_from_pptx(
+                filepath=str(local_path), source_file_id=file_id,
+                vendor_id=vendor_id, vendor_name=vendor_name,
+            )
+
+        # Strategy 4: DOCX, images — Gemini only
         elif ext in GEMINI_EXTENSIONS and use_gemini:
             products = extract_products_gemini(
                 filepath=str(local_path), source_file_id=file_id,
