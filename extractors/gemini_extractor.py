@@ -149,9 +149,11 @@ def _extract_chunked_pdf(
     source_file_id: str,
     vendor_id: str,
     vendor_name: str,
-    max_pages_per_chunk: int = 30,
 ) -> list[WeChatProduct]:
-    """Split a large PDF into chunks, send each to Gemini, merge results."""
+    """Split a large PDF into chunks, send each to Gemini, merge results.
+
+    Adaptively sizes chunks to stay under 45MB per chunk.
+    """
     import tempfile
     from pypdf import PdfReader, PdfWriter
     from vertexai.generative_models import GenerativeModel, Part
@@ -166,8 +168,13 @@ def _extract_chunked_pdf(
         logger.error("Cannot read PDF %s: %s", filepath.name, e)
         return []
 
-    logger.info("Splitting %s (%.0fMB, %d pages) into chunks of %d pages...",
-                filepath.name, file_size_mb, total_pages, max_pages_per_chunk)
+    # Adaptive chunk size: estimate MB per page, target 40MB per chunk
+    mb_per_page = file_size_mb / max(total_pages, 1)
+    max_pages_per_chunk = max(1, int(40 / max(mb_per_page, 0.1)))
+    max_pages_per_chunk = min(max_pages_per_chunk, 30)  # cap at 30
+
+    logger.info("Splitting %s (%.0fMB, %d pages, ~%.1fMB/page) into chunks of %d pages...",
+                filepath.name, file_size_mb, total_pages, mb_per_page, max_pages_per_chunk)
 
     all_products: list[WeChatProduct] = []
     chunk_num = 0
