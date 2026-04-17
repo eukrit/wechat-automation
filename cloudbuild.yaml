@@ -39,7 +39,7 @@ steps:
       - '--set-env-vars'
       - 'GCP_PROJECT_ID=ai-agents-go,FIRESTORE_DATABASE=wechat-documents,GCS_BUCKET=wechat-documents-attachments,SHIPPING_FIRESTORE_DATABASE=shipping-automation'
       - '--set-secrets'
-      - 'SLACK_BOT_TOKEN=slack-bot-token:latest'
+      - 'SLACK_BOT_TOKEN=slack-bot-token:latest,GOOGLE_APPLICATION_CREDENTIALS=gmail-service-account:latest'
       - '--allow-unauthenticated'
       - '--memory'
       - '512Mi'
