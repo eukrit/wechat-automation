@@ -177,6 +177,7 @@ class WeChatVendor(BaseModel):
 
     # Categories (from product data)
     categories: list[str] = Field(default_factory=list)
+    subcategories: list[str] = Field(default_factory=list)
 
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

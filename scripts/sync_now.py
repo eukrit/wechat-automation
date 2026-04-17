@@ -155,6 +155,7 @@ def rebuild_vendors(all_files: list[dict], all_products: list[dict]) -> int:
             last_file_date=max(dates)[:10] if dates else "",
             total_size_bytes=sum(f.get("file_size_bytes", 0) for f in files),
             categories=list(set(p.get("category", "") for p in products if p.get("category")))[:20],
+            subcategories=list(set(p.get("subcategory", "") for p in products if p.get("subcategory")))[:50],
         )
         firestore_store.upsert_vendor(vendor)
 
@@ -231,6 +232,35 @@ def main() -> None:
 
         if products_new:
             logger.info("Phase 2: %d products from %d files", products_new, files_extracted)
+
+        # --- Phase 2b: Enrich new products with category + subcategory ---
+        try:
+            from scripts.enrich_categories import classify_batch
+            db = firestore_store._db()
+            from google.cloud import firestore as fs
+            unclassified = [
+                (d.id, d.to_dict())
+                for d in db.collection("wechat_products")
+                .where(filter=fs.FieldFilter("subcategory", "==", ""))
+                .limit(500)
+                .stream()
+            ]
+            if unclassified:
+                logger.info("Enriching %d products with category/subcategory...", len(unclassified))
+                for i in range(0, len(unclassified), 80):
+                    batch = unclassified[i:i + 80]
+                    classifications = classify_batch([p for _, p in batch])
+                    for (pid, _), cls in zip(batch, classifications):
+                        try:
+                            db.collection("wechat_products").document(pid).update({
+                                "category": str(cls.get("category", "") or "Other"),
+                                "subcategory": str(cls.get("subcategory", "") or ""),
+                            })
+                        except Exception:
+                            pass
+                logger.info("Category enrichment done")
+        except Exception as e:
+            logger.warning("Category enrichment failed: %s", e)
 
         # --- Phase 3: Rebuild vendor collection ---
         all_files = [d.to_dict() for d in db.collection("wechat_files").stream()]

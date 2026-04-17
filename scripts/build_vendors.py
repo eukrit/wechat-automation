@@ -141,6 +141,7 @@ def main() -> None:
             last_file_date=last_date[:10] if last_date else "",
             total_size_bytes=total_size,
             categories=categories[:20],
+            subcategories=list(set(p.get("subcategory", "") for p in products if p.get("subcategory")))[:50],
         )
 
         firestore_store.upsert_vendor(vendor)

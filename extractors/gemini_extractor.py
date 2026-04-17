@@ -39,7 +39,7 @@ _MIME_MAP = {
 
 _EXTRACTION_PROMPT = """You are a product data extractor for a procurement company. Analyze this document thoroughly and extract ALL products, items, or line items shown.
 
-For each product found, return a JSON object with these fields:
+For each product found, return a JSON object with these fields (ALL REQUIRED):
 - "product_name": product name (English preferred, include Chinese name if bilingual)
 - "sku": model number, SKU, item code, or catalog number
 - "description": brief description of the product
@@ -47,7 +47,17 @@ For each product found, return a JSON object with these fields:
 - "material": material composition if shown
 - "unit_price": numeric price only (no currency symbol). Use 0 if not shown.
 - "currency": "USD", "CNY", "EUR", or "THB" (default "CNY" for Chinese documents)
-- "category": product category (e.g., "Lighting", "Furniture", "Playground Equipment", "Flooring", "Hardware")
+- "category": HIGH-LEVEL category - ONE of: "Lighting", "Furniture", "Playground Equipment",
+  "Flooring", "Hardware", "Bathroom/Sanitary", "Kitchen", "Textile/Fabric", "Outdoor/Garden",
+  "Sports Equipment", "Climbing Wall", "Water Play", "Window/Door", "Wall Panel/Cladding",
+  "Decor/Accessories", "Carpet/Rug", "Umbrella/Shade", "HVAC", "Other"
+- "subcategory": SPECIFIC sub-type within the category. Examples:
+  - Lighting → "Pendant Lamp", "Downlight", "Wall Light", "Floor Lamp", "LED Strip", "Chandelier"
+  - Furniture → "Sofa", "Chair", "Table", "Bed", "Cabinet", "Wardrobe", "Desk"
+  - Flooring → "SPC Flooring", "Wood Flooring", "Carpet", "Vinyl", "Rubber Flooring"
+  - Hardware → "Hinge", "Handle", "Slider", "Lock", "Door Fittings"
+  - Playground → "Slide", "Climbing Hold", "Swing", "Trampoline", "Water Slide"
+  Pick the most specific sub-type that fits the product.
 - "weight_kg": weight in kg if shown, else 0
 - "moq": minimum order quantity if shown, else 0
 - "color": color/finish if shown
@@ -331,6 +341,7 @@ def _parse_gemini_response(
             sku=sku,
             description=str(item.get("description", "")),
             category=str(item.get("category", "")),
+            subcategory=str(item.get("subcategory", "")),
             material=str(item.get("material", "")),
             dimensions=str(item.get("dimensions", "")),
             weight_kg=weight,
