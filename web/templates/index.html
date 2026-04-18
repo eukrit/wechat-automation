@@ -27,6 +27,17 @@
   .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
   .search-bar input { flex: 1; padding: 10px 14px; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 6px; }
   .results-info { margin-bottom: 14px; color: #475569; font-size: 14px; }
+  .breadcrumb { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; font-size: 13px; }
+  .breadcrumb .crumb { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: white; border: 1px solid #cbd5e1; border-radius: 999px; color: #334155; }
+  .breadcrumb .crumb .label-type { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .breadcrumb .crumb .label-value { color: #0f172a; font-weight: 500; }
+  .breadcrumb .crumb .remove { cursor: pointer; color: #94a3b8; font-weight: 700; margin-left: 2px; font-size: 16px; line-height: 1; }
+  .breadcrumb .crumb .remove:hover { color: #ef4444; }
+  .breadcrumb .crumb.home { background: #0f172a; color: white; cursor: pointer; border-color: #0f172a; }
+  .breadcrumb .crumb.home:hover { background: #1e293b; }
+  .breadcrumb .sep { color: #cbd5e1; }
+  .breadcrumb .clear-all { margin-left: auto; color: #ef4444; cursor: pointer; font-size: 12px; padding: 4px 8px; }
+  .breadcrumb .clear-all:hover { text-decoration: underline; }
   .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
   @media (max-width: 900px) { .container { flex-direction: column; } aside { width: 100%; position: static; max-height: none; } }
   @media (max-width: 500px) { .product-grid { grid-template-columns: 1fr; } header h1 { font-size: 16px; } }
@@ -131,6 +142,7 @@
         <input type="text" id="q" placeholder="Search name, SKU, material, description..." oninput="debouncedSearch()">
       </div>
 
+      <nav class="breadcrumb" id="breadcrumb" aria-label="Active filters"></nav>
       <div class="results-info" id="results-info">Showing products...</div>
       <div class="spinner" id="spinner">Loading...</div>
       <div class="product-grid" id="product-grid"></div>
@@ -203,7 +215,80 @@ async function search() {
 let searchDebounce;
 function debouncedSearch() {
   clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(() => { offset = 0; search(); }, 350);
+  searchDebounce = setTimeout(() => { offset = 0; syncUrl(); search(); }, 350);
+}
+
+// --- URL sync: filter state <-> query params ---
+const FILTER_FIELDS = ['q','category','subcategory','vendor','currency','min_price','max_price'];
+const FILTER_ID = {
+  q: 'q', category: 'f-category', subcategory: 'f-subcategory',
+  vendor: 'f-vendor', currency: 'f-currency',
+  min_price: 'f-min', max_price: 'f-max',
+};
+
+function getFilterState() {
+  const state = {};
+  for (const f of FILTER_FIELDS) {
+    const v = document.getElementById(FILTER_ID[f]).value;
+    if (v && v !== '0') state[f] = v;
+  }
+  return state;
+}
+
+function syncUrl() {
+  const params = new URLSearchParams(getFilterState());
+  const qs = params.toString();
+  const url = qs ? ('?' + qs) : window.location.pathname;
+  history.replaceState(null, '', url);
+  renderBreadcrumb();
+}
+
+function applyUrlToFilters() {
+  const params = new URLSearchParams(window.location.search);
+  for (const f of FILTER_FIELDS) {
+    const v = params.get(f);
+    const el = document.getElementById(FILTER_ID[f]);
+    if (el) el.value = v || '';
+  }
+}
+
+// --- Breadcrumb rendering ---
+const FILTER_LABELS = {
+  q: {icon: '🔍', name: 'Search'},
+  category: {icon: '🏷️', name: 'Category'},
+  subcategory: {icon: '📦', name: 'Subcategory'},
+  vendor: {icon: '🏪', name: 'Vendor'},
+  currency: {icon: '💰', name: 'Currency'},
+  min_price: {icon: '↗', name: 'Min price'},
+  max_price: {icon: '↘', name: 'Max price'},
+};
+// Breadcrumb order: category → subcategory → vendor → others
+const CRUMB_ORDER = ['category','subcategory','vendor','q','currency','min_price','max_price'];
+
+function renderBreadcrumb() {
+  const state = getFilterState();
+  const bc = document.getElementById('breadcrumb');
+  const activeFilters = CRUMB_ORDER.filter(f => state[f]);
+
+  let html = `<span class="crumb home" onclick="clearFilters()">All Products</span>`;
+  activeFilters.forEach(f => {
+    const meta = FILTER_LABELS[f];
+    html += `<span class="sep">›</span>`;
+    html += `<span class="crumb"><span class="label-type">${meta.icon} ${meta.name}:</span><span class="label-value">${esc(state[f])}</span><span class="remove" onclick="removeFilter('${f}')" title="Remove">×</span></span>`;
+  });
+  if (activeFilters.length > 1) {
+    html += `<span class="clear-all" onclick="clearFilters()">Clear all</span>`;
+  }
+  bc.innerHTML = html;
+}
+
+function removeFilter(field) {
+  const el = document.getElementById(FILTER_ID[field]);
+  if (el) el.value = '';
+  rebuildFilterOptions();
+  offset = 0;
+  syncUrl();
+  search();
 }
 
 function renderCard(p) {
@@ -265,7 +350,9 @@ function clearFilters() {
   document.getElementById('f-currency').value = '';
   document.getElementById('f-min').value = '';
   document.getElementById('f-max').value = '';
+  rebuildFilterOptions();
   offset = 0;
+  syncUrl();
   search();
 }
 
@@ -381,12 +468,29 @@ function populateSelect(id, items, selectedValue, allLabel) {
 
 function onFilterChange() {
   rebuildFilterOptions();
-  debouncedSearch();
+  offset = 0;
+  syncUrl();
+  search();
 }
+
+// Browser back/forward
+window.addEventListener('popstate', () => {
+  applyUrlToFilters();
+  rebuildFilterOptions();
+  offset = 0;
+  renderBreadcrumb();
+  search();
+});
 
 // Init
 loadStats();
-(async () => { await loadFilters(); search(); })();
+(async () => {
+  await loadFilters();
+  applyUrlToFilters();  // Restore filter state from URL
+  rebuildFilterOptions();
+  renderBreadcrumb();
+  search();
+})();
 </script>
 </body>
 </html>
