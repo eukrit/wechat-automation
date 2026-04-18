@@ -127,8 +127,7 @@
       </div>
     </div>
 
-    <button onclick="search()">Apply filters</button>
-    <button class="secondary" onclick="clearFilters()">Clear</button>
+    <button class="secondary" onclick="clearFilters()">Clear all filters</button>
   </aside>
 
   <main>
@@ -147,11 +146,8 @@
       <div class="spinner" id="spinner">Loading...</div>
       <div class="product-grid" id="product-grid"></div>
 
-      <div class="pagination">
-        <button id="prev-btn" onclick="prevPage()" disabled>← Prev</button>
-        <span id="page-info" style="padding:6px 12px;">Page 1</span>
-        <button id="next-btn" onclick="nextPage()">Next →</button>
-      </div>
+      <div id="scroll-sentinel" style="height:40px;margin:20px 0;"></div>
+      <div id="load-status" style="text-align:center;padding:20px;color:#64748b;font-size:13px;"></div>
     </div>
 
     <div id="view-vendors" style="display:none">
@@ -170,6 +166,8 @@
 let offset = 0;
 const limit = 60;
 let total = 0;
+let isLoading = false;
+let scrollObserver = null;
 
 async function loadStats() {
   const r = await fetch('/api/stats');
@@ -178,9 +176,21 @@ async function loadStats() {
     d.total_vendors + ' vendors · ' + d.total_files.toLocaleString() + ' files · ' + d.total_products.toLocaleString() + ' products';
 }
 
-async function search() {
-  document.getElementById('spinner').style.display = 'block';
-  document.getElementById('product-grid').innerHTML = '';
+async function search(append = false) {
+  if (isLoading) return;
+  isLoading = true;
+
+  const status = document.getElementById('load-status');
+  const grid = document.getElementById('product-grid');
+
+  if (!append) {
+    // Fresh search: reset everything
+    offset = 0;
+    grid.innerHTML = '';
+    document.getElementById('spinner').style.display = 'block';
+  } else {
+    status.innerText = 'Loading more...';
+  }
 
   const params = new URLSearchParams({
     q: document.getElementById('q').value,
@@ -194,21 +204,51 @@ async function search() {
     offset: offset,
   });
 
-  const r = await fetch('/api/products?' + params);
-  const d = await r.json();
+  try {
+    const r = await fetch('/api/products?' + params);
+    const d = await r.json();
 
-  total = d.total;
-  document.getElementById('results-info').innerText = d.total.toLocaleString() + ' products found';
-  document.getElementById('spinner').style.display = 'none';
+    total = d.total;
+    document.getElementById('results-info').innerText = d.total.toLocaleString() + ' products found';
+    document.getElementById('spinner').style.display = 'none';
 
-  const grid = document.getElementById('product-grid');
-  grid.innerHTML = d.products.map(p => renderCard(p)).join('');
+    const html = d.products.map(p => renderCard(p)).join('');
+    if (append) grid.insertAdjacentHTML('beforeend', html);
+    else grid.innerHTML = html;
 
-  const pageNum = Math.floor(offset / limit) + 1;
-  const maxPage = Math.ceil(d.total / limit) || 1;
-  document.getElementById('page-info').innerText = 'Page ' + pageNum + ' of ' + maxPage;
-  document.getElementById('prev-btn').disabled = offset === 0;
-  document.getElementById('next-btn').disabled = offset + limit >= d.total;
+    offset += d.products.length;
+
+    if (offset >= total || d.products.length === 0) {
+      status.innerText = total === 0 ? 'No products match your filters' :
+        `All ${total.toLocaleString()} products loaded`;
+      disableScrollObserver();
+    } else {
+      status.innerText = `Showing ${offset.toLocaleString()} of ${total.toLocaleString()}`;
+      enableScrollObserver();
+    }
+  } catch (e) {
+    status.innerText = 'Error loading: ' + e.message;
+  } finally {
+    isLoading = false;
+  }
+}
+
+function enableScrollObserver() {
+  if (scrollObserver) return;
+  const sentinel = document.getElementById('scroll-sentinel');
+  scrollObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && !isLoading && offset < total) {
+      search(true);  // append next page
+    }
+  }, { rootMargin: '400px' });
+  scrollObserver.observe(sentinel);
+}
+
+function disableScrollObserver() {
+  if (scrollObserver) {
+    scrollObserver.disconnect();
+    scrollObserver = null;
+  }
 }
 
 // Debounced responsive search
@@ -338,9 +378,6 @@ function esc(s) {
 function downloadFile(fileId) {
   window.open('/api/file/' + fileId + '/download', '_blank');
 }
-
-function prevPage() { offset = Math.max(0, offset - limit); search(); }
-function nextPage() { offset += limit; search(); }
 
 function clearFilters() {
   document.getElementById('q').value = '';
