@@ -4,7 +4,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-web:$COMMIT_SHA'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-web:${BUILD_ID}'
       - '-t'
       - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-web:latest'
       - '-f'
@@ -13,7 +13,7 @@ steps:
     id: 'build-web'
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-web:$COMMIT_SHA']
+    args: ['push', 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-web:${BUILD_ID}']
     waitFor: ['build-web']
 
   - name: 'gcr.io/cloud-builders/docker'
@@ -28,7 +28,7 @@ steps:
       - 'deploy'
       - 'wechat-web'
       - '--image'
-      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-web:$COMMIT_SHA'
+      - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/wechat-automation/wechat-web:${BUILD_ID}'
       - '--region'
       - 'asia-southeast1'
       - '--platform'

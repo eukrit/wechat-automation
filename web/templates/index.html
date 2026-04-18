@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>WeChat Products Browser</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f5f7fa; color: #1a1a1a; }
+  header { background: #0f172a; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  header .stats { font-size: 13px; color: #94a3b8; }
+  .container { display: flex; min-height: calc(100vh - 64px); }
+  aside { width: 280px; background: white; border-right: 1px solid #e2e8f0; padding: 20px; overflow-y: auto; max-height: calc(100vh - 64px); position: sticky; top: 64px; }
+  aside h3 { margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+  aside label { display: block; margin: 6px 0; font-size: 14px; cursor: pointer; }
+  aside input[type=text], aside input[type=number], aside select { width: 100%; padding: 6px 8px; font-size: 14px; border: 1px solid #cbd5e1; border-radius: 4px; }
+  aside .filter-group { margin-bottom: 20px; }
+  aside .price-range { display: flex; gap: 6px; }
+  aside .price-range input { width: 50%; }
+  aside button { width: 100%; padding: 8px; background: #0ea5e9; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; margin-top: 8px; }
+  aside button:hover { background: #0284c7; }
+  aside button.secondary { background: #e2e8f0; color: #475569; margin-top: 4px; }
+  aside .tag-list { max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 4px; padding: 4px; background: #f8fafc; }
+  aside .tag-list label:hover { background: #e2e8f0; }
+  main { flex: 1; padding: 20px; }
+  .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+  .search-bar input { flex: 1; padding: 10px 14px; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 6px; }
+  .results-info { margin-bottom: 14px; color: #475569; font-size: 14px; }
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; transition: box-shadow 0.2s; }
+  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .card .sku { font-family: monospace; font-size: 12px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px; display: inline-block; }
+  .card .name { font-weight: 600; font-size: 15px; margin: 6px 0 4px 0; color: #0f172a; }
+  .card .vendor { font-size: 12px; color: #0ea5e9; margin-bottom: 8px; }
+  .card .cat { font-size: 11px; color: #475569; background: #e0f2fe; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-right: 4px; }
+  .card .subcat { font-size: 11px; color: #475569; background: #fef3c7; padding: 2px 6px; border-radius: 3px; display: inline-block; }
+  .card .price { font-weight: 700; font-size: 16px; color: #059669; margin-top: 10px; }
+  .card .desc { font-size: 12px; color: #64748b; margin-top: 6px; line-height: 1.4; }
+  .card .meta { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .card .source { font-size: 10px; color: #94a3b8; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; cursor: pointer; }
+  .card .source:hover { color: #0ea5e9; text-decoration: underline; }
+  .pagination { display: flex; justify-content: center; gap: 8px; margin: 20px 0; }
+  .pagination button { padding: 6px 12px; background: white; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .tab-row { display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 2px solid #e2e8f0; }
+  .tab-row button { background: none; border: none; padding: 10px 14px; font-size: 14px; cursor: pointer; color: #64748b; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab-row button.active { color: #0ea5e9; border-bottom-color: #0ea5e9; font-weight: 600; }
+  .vendor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .vendor-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; cursor: pointer; }
+  .vendor-card:hover { border-color: #0ea5e9; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .vendor-card h3 { margin: 0 0 6px 0; font-size: 15px; color: #0f172a; }
+  .vendor-card .nums { display: flex; gap: 10px; font-size: 12px; color: #64748b; margin-top: 8px; }
+  .vendor-card .nums span { background: #f1f5f9; padding: 2px 8px; border-radius: 3px; }
+  .spinner { display: none; padding: 40px; text-align: center; color: #64748b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛍️ WeChat Products Browser</h1>
+  <div class="stats" id="stats">Loading...</div>
+</header>
+
+<div class="container">
+  <aside>
+    <div class="filter-group">
+      <h3>Category</h3>
+      <select id="f-category">
+        <option value="">All categories</option>
+        {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <h3>Subcategory</h3>
+      <select id="f-subcategory">
+        <option value="">All subcategories</option>
+        {% for s in subcategories %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <h3>Vendor</h3>
+      <select id="f-vendor">
+        <option value="">All vendors</option>
+        {% for v in vendors %}
+          <option value="{{ v.vendor_name }}">{{ v.vendor_name }} ({{ v.product_count }})</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <h3>Currency</h3>
+      <select id="f-currency">
+        <option value="">Any</option>
+        <option value="USD">USD</option>
+        <option value="CNY">CNY</option>
+        <option value="EUR">EUR</option>
+        <option value="THB">THB</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <h3>Price Range</h3>
+      <div class="price-range">
+        <input type="number" id="f-min" placeholder="min" min="0">
+        <input type="number" id="f-max" placeholder="max" min="0">
+      </div>
+    </div>
+
+    <button onclick="search()">Apply filters</button>
+    <button class="secondary" onclick="clearFilters()">Clear</button>
+  </aside>
+
+  <main>
+    <div class="tab-row">
+      <button id="tab-products" class="active" onclick="showTab('products')">Products</button>
+      <button id="tab-vendors" onclick="showTab('vendors')">Vendors</button>
+    </div>
+
+    <div id="view-products">
+      <div class="search-bar">
+        <input type="text" id="q" placeholder="Search name, SKU, material, description..." onkeydown="if(event.key==='Enter')search()">
+        <button onclick="search()" style="padding:10px 20px;background:#0ea5e9;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Search</button>
+      </div>
+
+      <div class="results-info" id="results-info">Showing products...</div>
+      <div class="spinner" id="spinner">Loading...</div>
+      <div class="product-grid" id="product-grid"></div>
+
+      <div class="pagination">
+        <button id="prev-btn" onclick="prevPage()" disabled>← Prev</button>
+        <span id="page-info" style="padding:6px 12px;">Page 1</span>
+        <button id="next-btn" onclick="nextPage()">Next →</button>
+      </div>
+    </div>
+
+    <div id="view-vendors" style="display:none">
+      <div class="vendor-grid" id="vendor-grid"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+let offset = 0;
+const limit = 60;
+let total = 0;
+
+async function loadStats() {
+  const r = await fetch('/api/stats');
+  const d = await r.json();
+  document.getElementById('stats').innerText =
+    d.total_vendors + ' vendors · ' + d.total_files.toLocaleString() + ' files · ' + d.total_products.toLocaleString() + ' products';
+}
+
+async function search() {
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('product-grid').innerHTML = '';
+
+  const params = new URLSearchParams({
+    q: document.getElementById('q').value,
+    vendor: document.getElementById('f-vendor').value,
+    category: document.getElementById('f-category').value,
+    subcategory: document.getElementById('f-subcategory').value,
+    currency: document.getElementById('f-currency').value,
+    min_price: document.getElementById('f-min').value || 0,
+    max_price: document.getElementById('f-max').value || 0,
+    limit: limit,
+    offset: offset,
+  });
+
+  const r = await fetch('/api/products?' + params);
+  const d = await r.json();
+
+  total = d.total;
+  document.getElementById('results-info').innerText = d.total.toLocaleString() + ' products found';
+  document.getElementById('spinner').style.display = 'none';
+
+  const grid = document.getElementById('product-grid');
+  grid.innerHTML = d.products.map(p => renderCard(p)).join('');
+
+  const pageNum = Math.floor(offset / limit) + 1;
+  const maxPage = Math.ceil(d.total / limit) || 1;
+  document.getElementById('page-info').innerText = 'Page ' + pageNum + ' of ' + maxPage;
+  document.getElementById('prev-btn').disabled = offset === 0;
+  document.getElementById('next-btn').disabled = offset + limit >= d.total;
+}
+
+function renderCard(p) {
+  const priceStr = p.unit_price > 0 ? ('$' + p.unit_price.toFixed(2) + ' ' + (p.currency||'')) : 'No price';
+  return `<div class="card">
+    ${p.sku ? '<span class="sku">' + esc(p.sku) + '</span>' : ''}
+    <div class="name">${esc(p.product_name || '—')}</div>
+    ${p.vendor_name ? '<div class="vendor">' + esc(p.vendor_name) + '</div>' : ''}
+    ${p.category ? '<span class="cat">' + esc(p.category) + '</span>' : ''}
+    ${p.subcategory ? '<span class="subcat">' + esc(p.subcategory) + '</span>' : ''}
+    <div class="price">${priceStr}</div>
+    ${p.description ? '<div class="desc">' + esc(p.description.substring(0,120)) + (p.description.length > 120 ? '…' : '') + '</div>' : ''}
+    ${p.dimensions ? '<div class="meta">📐 ' + esc(p.dimensions) + '</div>' : ''}
+    ${p.material ? '<div class="meta">🧱 ' + esc(p.material.substring(0,50)) + '</div>' : ''}
+    ${p.moq ? '<div class="meta">📦 MOQ: ' + p.moq + '</div>' : ''}
+    ${p.source_file_id ? '<div class="source" onclick="downloadFile(\'' + p.source_file_id + '\')">📄 ' + esc((p.source_filename||'').substring(0,50)) + '</div>' : ''}
+  </div>`;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function downloadFile(fileId) {
+  const r = await fetch('/api/file/' + fileId + '/download');
+  const d = await r.json();
+  if (d.url) window.open(d.url, '_blank');
+  else alert('Cannot download: ' + (d.error || 'unknown'));
+}
+
+function prevPage() { offset = Math.max(0, offset - limit); search(); }
+function nextPage() { offset += limit; search(); }
+
+function clearFilters() {
+  document.getElementById('q').value = '';
+  document.getElementById('f-vendor').value = '';
+  document.getElementById('f-category').value = '';
+  document.getElementById('f-subcategory').value = '';
+  document.getElementById('f-currency').value = '';
+  document.getElementById('f-min').value = '';
+  document.getElementById('f-max').value = '';
+  offset = 0;
+  search();
+}
+
+function showTab(t) {
+  document.getElementById('tab-products').classList.toggle('active', t === 'products');
+  document.getElementById('tab-vendors').classList.toggle('active', t === 'vendors');
+  document.getElementById('view-products').style.display = t === 'products' ? '' : 'none';
+  document.getElementById('view-vendors').style.display = t === 'vendors' ? '' : 'none';
+  if (t === 'vendors') loadVendors();
+}
+
+async function loadVendors() {
+  const r = await fetch('/api/vendors');
+  const d = await r.json();
+  document.getElementById('vendor-grid').innerHTML = d.vendors.map(v => `
+    <div class="vendor-card" onclick="filterByVendor('${esc(v.vendor_name)}')">
+      <h3>${esc(v.vendor_name)}</h3>
+      <div class="nums">
+        <span>📄 ${v.file_count} files</span>
+        <span>📦 ${v.product_count} products</span>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#64748b;">
+        ${(v.subcategories||[]).slice(0,5).map(s => '<span style="background:#fef3c7;padding:2px 6px;border-radius:3px;margin-right:3px;display:inline-block;margin-bottom:3px">' + esc(s) + '</span>').join(' ')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterByVendor(v) {
+  document.getElementById('f-vendor').value = v;
+  showTab('products');
+  offset = 0;
+  search();
+}
+
+// Init
+loadStats();
+search();
+</script>
+</body>
+</html>
