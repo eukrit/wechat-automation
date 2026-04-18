@@ -231,16 +231,11 @@ function setupImageObserver() {
         const page = wrap.dataset.page || 1;
         if (!fileId || wrap.dataset.loaded) return;
         wrap.dataset.loaded = '1';
-        fetch('/api/preview/' + fileId + '?page=' + page)
-          .then(r => r.json())
-          .then(d => {
-            if (d.url) {
-              const img = new Image();
-              img.src = d.url;
-              img.onload = () => { wrap.innerHTML = ''; wrap.appendChild(img); };
-            }
-          })
-          .catch(() => {});
+        const img = new Image();
+        img.src = '/api/preview/' + fileId + '?page=' + page;
+        img.loading = 'lazy';
+        img.onload = () => { wrap.innerHTML = ''; wrap.appendChild(img); };
+        img.onerror = () => { /* keep placeholder */ };
         imgObserver.unobserve(wrap);
       }
     });
@@ -256,11 +251,8 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-async function downloadFile(fileId) {
-  const r = await fetch('/api/file/' + fileId + '/download');
-  const d = await r.json();
-  if (d.url) window.open(d.url, '_blank');
-  else alert('Cannot download: ' + (d.error || 'unknown'));
+function downloadFile(fileId) {
+  window.open('/api/file/' + fileId + '/download', '_blank');
 }
 
 function prevPage() { offset = Math.max(0, offset - limit); search(); }
