@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.7.0 — 2026-04-18
+
+### Added
+- **URL slugs**: filter state serializes to query params. Example: `?category=Lighting&subcategory=Pendant+Lamp&vendor=Karhi+Lighting`
+- **Breadcrumb navigation**: shows active filters as pills `All Products › 🏷️ Category: Lighting › 📦 Subcategory: Pendant Lamp › 🏪 Vendor: Karhi Lighting`
+- Each breadcrumb pill has `×` to remove that single filter
+- **Clear all** button appears when 2+ filters are active
+- **All Products** home crumb resets to unfiltered view
+- Browser **back/forward** restores prior filter state via `popstate`
+- Direct URL links shareable — paste `/?category=Lighting&vendor=Moonhill` to pre-filter
+
+### Files changed
+- `web/templates/index.html` — breadcrumb CSS, URL sync (`syncUrl`, `applyUrlToFilters`), `renderBreadcrumb`, `removeFilter`, popstate handler
+
+### Outcome
+- Shareable filter URLs (copy-paste)
+- Browser history works natively
+- Visual chain shows where you are in the catalog hierarchy
+- Live: https://wechat-web-rg5gmtwrfa-as.a.run.app
+
+## v0.6.1 — 2026-04-18
+
+### Changed
+- Thumbnails now use native `<img loading="lazy">` (was IntersectionObserver) — more reliable rendering
+- Click thumbnail → loads high-res 1200px preview in simple fullscreen overlay (was modal with bar+download)
+- Modal simplified to just the image + close button
+
+### Added
+- `/api/preview` supports `size=thumb` (400px) and `size=large` (1200px)
+- PDF `size=large` renders at 3x zoom with JPEG quality 85
+
 ## v0.6.0 — 2026-04-18
 
 ### Added
