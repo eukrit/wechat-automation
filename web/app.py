@@ -196,15 +196,15 @@ async def get_file_url(file_id: str):
 
 @app.get("/api/stats")
 async def stats():
-    """Return aggregate stats."""
-    vendors = [d.to_dict() for d in db().collection("wechat_vendors").stream()]
-    total_files = sum(v.get("file_count", 0) for v in vendors)
-    total_products = sum(v.get("product_count", 0) for v in vendors)
+    """Return aggregate stats - counts docs directly for accuracy."""
+    vendors_count = db().collection("wechat_vendors").count().get()[0][0].value
+    files_count = db().collection("wechat_files").count().get()[0][0].value
+    products_count = db().collection("wechat_products").count().get()[0][0].value
 
     return JSONResponse({
-        "total_vendors": len(vendors),
-        "total_files": total_files,
-        "total_products": total_products,
+        "total_vendors": vendors_count,
+        "total_files": files_count,
+        "total_products": products_count,
     })
 
 
