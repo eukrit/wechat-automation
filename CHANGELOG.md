@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.9.0 — 2026-04-18
+
+### Added
+- **Sort options** in search bar dropdown:
+  - Relevance (default, Firestore natural order)
+  - Name A–Z / Name Z–A
+  - Vendor A–Z / Vendor Z–A (secondary sort by product name)
+  - Price Low → High (unpriced items pushed to end)
+  - Price High → Low
+  - SKU (A–Z)
+  - Newest first (by `extracted_at`)
+- `/api/products?sort=...` accepts all sort options, applied after filtering
+- Sort persists in URL query params (omitted when default `relevance`)
+- Sort excluded from breadcrumb (it's a preference, not a filter)
+- `clearFilters()` also resets sort to relevance
+
+### Files changed
+- `web/app.py` — sort param + sort logic in `/api/products`
+- `web/templates/index.html` — sort `<select>`, FILTER_FIELDS includes sort, clearFilters resets
+
+### Outcome
+- Browse by price discovery, alphabetical catalog, vendor grouping
+- Shareable sorted URLs: `/?category=Lighting&sort=price_asc`
+- Live: https://wechat-web-rg5gmtwrfa-as.a.run.app
+
 ## v0.8.0 — 2026-04-18
 
 ### Added
