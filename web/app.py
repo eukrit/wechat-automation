@@ -230,12 +230,15 @@ async def get_vendor(vendor_id: str):
 
 
 @app.get("/api/preview/{file_id}")
-async def get_preview(file_id: str, page: int = 1):
-    """Render and stream a thumbnail for a source file page.
+async def get_preview(file_id: str, page: int = 1, size: str = "thumb"):
+    """Render and stream a thumbnail (size=thumb, 400px) or large preview (size=large, 1200px).
 
-    Caches rendered thumbnails in GCS and streams them to the client.
+    Caches both resolutions separately in GCS.
     """
     from fastapi.responses import Response
+
+    # Size: 'thumb' = 400px, 'large' = 1200px
+    max_width = 1200 if size == "large" else 400
 
     doc = db().collection("wechat_files").document(file_id).get()
     if not doc.exists:
@@ -248,13 +251,11 @@ async def get_preview(file_id: str, page: int = 1):
     if not gcs_path:
         return JSONResponse({"error": "No source file"}, status_code=404)
 
-    # Cached thumbnail path
-    thumb_name = f"_thumbnails/{file_id}_p{page}.jpg"
+    thumb_name = f"_thumbnails/{file_id}_p{page}_{size}.jpg"
     client = storage.Client(project=PROJECT)
     bucket = client.bucket(BUCKET)
     thumb_blob = bucket.blob(thumb_name)
 
-    # If thumbnail exists, stream it
     if thumb_blob.exists():
         return Response(
             content=thumb_blob.download_as_bytes(),
@@ -262,33 +263,30 @@ async def get_preview(file_id: str, page: int = 1):
             headers={"Cache-Control": "public, max-age=86400"},
         )
 
-    # Skip files over 200MB — too slow to preview
     file_size = int(file_data.get("file_size_bytes", 0) or 0)
     if file_size > 200 * 1024 * 1024:
         placeholder = _generate_placeholder(f"{file_data.get('category','Large File')}")
         return Response(content=placeholder, media_type="image/jpeg",
                         headers={"Cache-Control": "public, max-age=3600"})
 
-    # Otherwise render it
     source_blob_name = gcs_path.replace(f"gs://{BUCKET}/", "")
     source_blob = bucket.blob(source_blob_name)
 
     try:
         if ext == "pdf":
-            thumb_bytes = _render_pdf_page(source_blob, page)
+            thumb_bytes = _render_pdf_page(source_blob, page, max_width=max_width)
         elif ext in ("jpg", "jpeg", "png", "webp"):
-            thumb_bytes = _resize_image(source_blob)
+            thumb_bytes = _resize_image(source_blob, max_width=max_width)
         elif ext == "xlsx":
-            thumb_bytes = _render_xlsx_preview(source_blob)
+            thumb_bytes = _render_xlsx_preview(source_blob, max_width=max_width)
         elif ext == "pptx":
-            thumb_bytes = _render_pptx_slide(source_blob, page)
+            thumb_bytes = _render_pptx_slide(source_blob, page, max_width=max_width)
         else:
             thumb_bytes = _generate_placeholder(ext.upper())
 
         if not thumb_bytes:
             thumb_bytes = _generate_placeholder(file_data.get("file_type", "Document"))
 
-        # Cache in GCS (best-effort)
         try:
             thumb_blob.upload_from_string(thumb_bytes, content_type="image/jpeg")
         except Exception:
@@ -299,7 +297,6 @@ async def get_preview(file_id: str, page: int = 1):
             headers={"Cache-Control": "public, max-age=86400"},
         )
     except Exception as e:
-        # Return placeholder instead of 500 so frontend can still show something
         placeholder = _generate_placeholder(file_data.get("file_type", "Preview Error"))
         return Response(content=placeholder, media_type="image/jpeg",
                         headers={"Cache-Control": "public, max-age=300"})
@@ -322,30 +319,30 @@ def _resize_image(blob, max_width: int = 400) -> bytes:
 def _render_pdf_page(blob, page_num: int, max_width: int = 400) -> bytes:
     """Render a PDF page as JPEG bytes."""
     import io
-    import fitz  # PyMuPDF
+    import fitz
 
     pdf_bytes = blob.download_as_bytes()
     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     page_idx = min(max(page_num - 1, 0), len(pdf_doc) - 1)
     page_obj = pdf_doc[page_idx]
 
-    # Render at ~150 DPI, then resize
-    pix = page_obj.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-    img_bytes = pix.tobytes("jpeg", jpg_quality=80)
+    # Render at zoom that gets us close to target, then resize
+    zoom = 3.0 if max_width > 600 else 2.0
+    pix = page_obj.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    img_bytes = pix.tobytes("jpeg", jpg_quality=85)
 
-    # Resize
     from PIL import Image
     img = Image.open(io.BytesIO(img_bytes))
     if img.width > max_width:
         ratio = max_width / img.width
         img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
     out = io.BytesIO()
-    img.save(out, format="JPEG", quality=75)
+    img.save(out, format="JPEG", quality=85)
     pdf_doc.close()
     return out.getvalue()
 
 
-def _render_xlsx_preview(blob) -> bytes:
+def _render_xlsx_preview(blob, max_width: int = 400) -> bytes:
     """Extract first embedded image from xlsx, or generate a text preview."""
     import io
     from zipfile import ZipFile
@@ -353,27 +350,24 @@ def _render_xlsx_preview(blob) -> bytes:
     xlsx_bytes = blob.download_as_bytes()
     try:
         with ZipFile(io.BytesIO(xlsx_bytes)) as z:
-            # Find first image in xl/media/
             for name in z.namelist():
                 if name.startswith("xl/media/") and name.lower().endswith((".jpg", ".jpeg", ".png")):
                     img_data = z.read(name)
                     from PIL import Image
                     img = Image.open(io.BytesIO(img_data)).convert("RGB")
-                    max_w = 400
-                    if img.width > max_w:
-                        ratio = max_w / img.width
-                        img = img.resize((max_w, int(img.height * ratio)), Image.LANCZOS)
+                    if img.width > max_width:
+                        ratio = max_width / img.width
+                        img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
                     out = io.BytesIO()
-                    img.save(out, format="JPEG", quality=75)
+                    img.save(out, format="JPEG", quality=85)
                     return out.getvalue()
     except Exception:
         pass
 
-    # Fallback: generate a placeholder
     return _generate_placeholder("Spreadsheet")
 
 
-def _render_pptx_slide(blob, slide_num: int) -> bytes:
+def _render_pptx_slide(blob, slide_num: int, max_width: int = 400) -> bytes:
     """Extract slide image from pptx."""
     import io
     from zipfile import ZipFile
@@ -381,19 +375,17 @@ def _render_pptx_slide(blob, slide_num: int) -> bytes:
     pptx_bytes = blob.download_as_bytes()
     try:
         with ZipFile(io.BytesIO(pptx_bytes)) as z:
-            # Try slide thumbnail first
             media_files = sorted([n for n in z.namelist() if n.startswith("ppt/media/") and n.lower().endswith((".jpg", ".jpeg", ".png"))])
             if media_files:
                 idx = min(max(slide_num - 1, 0), len(media_files) - 1)
                 img_data = z.read(media_files[idx])
                 from PIL import Image
                 img = Image.open(io.BytesIO(img_data)).convert("RGB")
-                max_w = 400
-                if img.width > max_w:
-                    ratio = max_w / img.width
-                    img = img.resize((max_w, int(img.height * ratio)), Image.LANCZOS)
+                if img.width > max_width:
+                    ratio = max_width / img.width
+                    img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
                 out = io.BytesIO()
-                img.save(out, format="JPEG", quality=75)
+                img.save(out, format="JPEG", quality=85)
                 return out.getvalue()
     except Exception:
         pass

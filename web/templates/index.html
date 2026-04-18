@@ -61,13 +61,11 @@
   .vendor-card .nums span { background: #f1f5f9; padding: 2px 8px; border-radius: 3px; }
   .spinner { display: none; padding: 40px; text-align: center; color: #64748b; }
   /* Modal for enlarged image */
-  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; align-items: center; justify-content: center; padding: 20px; cursor: zoom-out; }
   .modal.active { display: flex; }
-  .modal-content { max-width: 90vw; max-height: 90vh; background: white; border-radius: 8px; overflow: hidden; position: relative; }
-  .modal-content img { max-width: 90vw; max-height: 80vh; display: block; }
-  .modal-content .bar { padding: 10px 16px; background: #0f172a; color: white; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
-  .modal-content .bar button { background: #0ea5e9; color: white; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; }
-  .modal-close { position: absolute; top: 10px; right: 14px; color: white; font-size: 28px; cursor: pointer; background: rgba(0,0,0,0.5); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 2; }
+  .modal img { max-width: 95vw; max-height: 95vh; object-fit: contain; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+  .modal-close { position: fixed; top: 20px; right: 20px; color: white; font-size: 36px; cursor: pointer; width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1001; }
+  .modal-close:hover { background: rgba(0,0,0,0.8); }
 </style>
 </head>
 <body>
@@ -151,15 +149,9 @@
 </div>
 
 <!-- Image modal -->
-<div class="modal" id="image-modal" onclick="if(event.target===this)closeImageModal()">
-  <div class="modal-content">
-    <span class="modal-close" onclick="closeImageModal()">×</span>
-    <img id="modal-img" src="" alt="Preview">
-    <div class="bar">
-      <span id="modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;margin-right:10px;"></span>
-      <button id="modal-download">📥 Download</button>
-    </div>
-  </div>
+<div class="modal" id="image-modal" onclick="closeImageModal()">
+  <span class="modal-close" onclick="closeImageModal()">×</span>
+  <img id="modal-img" src="" alt="Preview">
 </div>
 
 <script>
@@ -199,7 +191,6 @@ async function search() {
 
   const grid = document.getElementById('product-grid');
   grid.innerHTML = d.products.map(p => renderCard(p)).join('');
-  setupImageObserver();
 
   const pageNum = Math.floor(offset / limit) + 1;
   const maxPage = Math.ceil(d.total / limit) || 1;
@@ -218,14 +209,13 @@ function debouncedSearch() {
 function renderCard(p) {
   const priceStr = p.unit_price > 0 ? ('$' + p.unit_price.toFixed(2) + ' ' + (p.currency||'')) : 'No price';
   const previewPage = p.source_page || 1;
-  const productJson = encodeURIComponent(JSON.stringify({
-    name: p.product_name, sku: p.sku, fid: p.source_file_id, page: previewPage,
-    file: p.source_filename, vendor: p.vendor_name
-  }));
+  const fid = p.source_file_id || '';
+  const imgUrl = fid ? `/api/preview/${fid}?page=${previewPage}` : '';
   return `<div class="card">
-    <div class="img-wrap" onclick="openImageModal('${productJson}')" data-file="${p.source_file_id||''}" data-page="${previewPage}">
-      <span class="placeholder">${esc(p.category || 'Product')}</span>
-    </div>
+    ${fid
+      ? `<div class="img-wrap" onclick="enlargeImage('${fid}', ${previewPage})"><img src="${imgUrl}" loading="lazy" onerror="this.style.display='none';this.parentElement.innerHTML='<span class=placeholder>${esc(p.category||'No image')}</span>'" alt="${esc(p.product_name||'')}"></div>`
+      : `<div class="img-wrap"><span class="placeholder">${esc(p.category || 'No image')}</span></div>`
+    }
     <div class="body">
       ${p.sku ? '<span class="sku">' + esc(p.sku) + '</span>' : ''}
       <div class="name">${esc(p.product_name || '—')}</div>
@@ -237,22 +227,15 @@ function renderCard(p) {
       ${p.dimensions ? '<div class="meta">📐 ' + esc(p.dimensions) + '</div>' : ''}
       ${p.material ? '<div class="meta">🧱 ' + esc(p.material.substring(0,50)) + '</div>' : ''}
       ${p.moq ? '<div class="meta">📦 MOQ: ' + p.moq + '</div>' : ''}
-      ${p.source_file_id ? '<div class="source" onclick="event.stopPropagation();downloadFile(\'' + p.source_file_id + '\')">📄 ' + esc((p.source_filename||'').substring(0,50)) + '</div>' : ''}
+      ${fid ? '<div class="source" onclick="downloadFile(\'' + fid + '\')">📄 ' + esc((p.source_filename||'').substring(0,50)) + '</div>' : ''}
     </div>
   </div>`;
 }
 
-function openImageModal(dataStr) {
-  const d = JSON.parse(decodeURIComponent(dataStr));
-  if (!d.fid) return;
+function enlargeImage(fid, page) {
   const modal = document.getElementById('image-modal');
   const img = document.getElementById('modal-img');
-  const title = document.getElementById('modal-title');
-  const dl = document.getElementById('modal-download');
-
-  img.src = '/api/preview/' + d.fid + '?page=' + (d.page || 1);
-  title.textContent = (d.name || '-') + ' · ' + (d.vendor || '') + ' · ' + (d.file || '');
-  dl.onclick = () => downloadFile(d.fid);
+  img.src = '/api/preview/' + fid + '?page=' + page + '&size=large';
   modal.classList.add('active');
 }
 
@@ -260,32 +243,7 @@ function closeImageModal() {
   document.getElementById('image-modal').classList.remove('active');
 }
 
-// IntersectionObserver for lazy-loading preview images
-let imgObserver;
-function setupImageObserver() {
-  if (imgObserver) imgObserver.disconnect();
-  imgObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        const wrap = entry.target;
-        const fileId = wrap.dataset.file;
-        const page = wrap.dataset.page || 1;
-        if (!fileId || wrap.dataset.loaded) return;
-        wrap.dataset.loaded = '1';
-        const img = new Image();
-        img.src = '/api/preview/' + fileId + '?page=' + page;
-        img.loading = 'lazy';
-        img.onload = () => { wrap.innerHTML = ''; wrap.appendChild(img); };
-        img.onerror = () => { /* keep placeholder */ };
-        imgObserver.unobserve(wrap);
-      }
-    });
-  }, { rootMargin: '200px' });
-
-  document.querySelectorAll('.img-wrap[data-file]').forEach(el => {
-    if (el.dataset.file && !el.dataset.loaded) imgObserver.observe(el);
-  });
-}
+// Native loading="lazy" on <img> handles lazy loading automatically
 
 function esc(s) {
   if (!s) return '';
