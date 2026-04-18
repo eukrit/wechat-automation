@@ -60,6 +60,14 @@
   .vendor-card .nums { display: flex; gap: 10px; font-size: 12px; color: #64748b; margin-top: 8px; }
   .vendor-card .nums span { background: #f1f5f9; padding: 2px 8px; border-radius: 3px; }
   .spinner { display: none; padding: 40px; text-align: center; color: #64748b; }
+  /* Modal for enlarged image */
+  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+  .modal.active { display: flex; }
+  .modal-content { max-width: 90vw; max-height: 90vh; background: white; border-radius: 8px; overflow: hidden; position: relative; }
+  .modal-content img { max-width: 90vw; max-height: 80vh; display: block; }
+  .modal-content .bar { padding: 10px 16px; background: #0f172a; color: white; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .modal-content .bar button { background: #0ea5e9; color: white; border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; }
+  .modal-close { position: absolute; top: 10px; right: 14px; color: white; font-size: 28px; cursor: pointer; background: rgba(0,0,0,0.5); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 2; }
 </style>
 </head>
 <body>
@@ -72,21 +80,21 @@
   <aside>
     <div class="filter-group">
       <h3>Category</h3>
-      <select id="f-category" onchange="debouncedSearch()">
+      <select id="f-category" onchange="onFilterChange()">
         <option value="">All categories</option>
       </select>
     </div>
 
     <div class="filter-group">
       <h3>Subcategory</h3>
-      <select id="f-subcategory" onchange="debouncedSearch()">
+      <select id="f-subcategory" onchange="onFilterChange()">
         <option value="">All subcategories</option>
       </select>
     </div>
 
     <div class="filter-group">
       <h3>Vendor</h3>
-      <select id="f-vendor" onchange="debouncedSearch()">
+      <select id="f-vendor" onchange="onFilterChange()">
         <option value="">All vendors</option>
       </select>
     </div>
@@ -140,6 +148,18 @@
       <div class="vendor-grid" id="vendor-grid"></div>
     </div>
   </main>
+</div>
+
+<!-- Image modal -->
+<div class="modal" id="image-modal" onclick="if(event.target===this)closeImageModal()">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeImageModal()">×</span>
+    <img id="modal-img" src="" alt="Preview">
+    <div class="bar">
+      <span id="modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;margin-right:10px;"></span>
+      <button id="modal-download">📥 Download</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -197,11 +217,14 @@ function debouncedSearch() {
 
 function renderCard(p) {
   const priceStr = p.unit_price > 0 ? ('$' + p.unit_price.toFixed(2) + ' ' + (p.currency||'')) : 'No price';
-  const imgId = 'img-' + Math.random().toString(36).substr(2,9);
   const previewPage = p.source_page || 1;
+  const productJson = encodeURIComponent(JSON.stringify({
+    name: p.product_name, sku: p.sku, fid: p.source_file_id, page: previewPage,
+    file: p.source_filename, vendor: p.vendor_name
+  }));
   return `<div class="card">
-    <div class="img-wrap" onclick="${p.source_file_id ? 'downloadFile(\''+p.source_file_id+'\')' : ''}" data-file="${p.source_file_id||''}" data-page="${previewPage}">
-      <span class="placeholder" id="${imgId}">${esc(p.category || 'Product')}</span>
+    <div class="img-wrap" onclick="openImageModal('${productJson}')" data-file="${p.source_file_id||''}" data-page="${previewPage}">
+      <span class="placeholder">${esc(p.category || 'Product')}</span>
     </div>
     <div class="body">
       ${p.sku ? '<span class="sku">' + esc(p.sku) + '</span>' : ''}
@@ -217,6 +240,24 @@ function renderCard(p) {
       ${p.source_file_id ? '<div class="source" onclick="event.stopPropagation();downloadFile(\'' + p.source_file_id + '\')">📄 ' + esc((p.source_filename||'').substring(0,50)) + '</div>' : ''}
     </div>
   </div>`;
+}
+
+function openImageModal(dataStr) {
+  const d = JSON.parse(decodeURIComponent(dataStr));
+  if (!d.fid) return;
+  const modal = document.getElementById('image-modal');
+  const img = document.getElementById('modal-img');
+  const title = document.getElementById('modal-title');
+  const dl = document.getElementById('modal-download');
+
+  img.src = '/api/preview/' + d.fid + '?page=' + (d.page || 1);
+  title.textContent = (d.name || '-') + ' · ' + (d.vendor || '') + ' · ' + (d.file || '');
+  dl.onclick = () => downloadFile(d.fid);
+  modal.classList.add('active');
+}
+
+function closeImageModal() {
+  document.getElementById('image-modal').classList.remove('active');
 }
 
 // IntersectionObserver for lazy-loading preview images
@@ -302,40 +343,92 @@ function filterByVendor(v) {
   search();
 }
 
+let filterMeta = null;  // stores the full /api/filters response
+
 async function loadFilters() {
   const r = await fetch('/api/filters');
-  const d = await r.json();
+  filterMeta = await r.json();
+  rebuildFilterOptions();
+}
 
-  // Populate category select
-  const catSel = document.getElementById('f-category');
-  d.categories.forEach(c => {
-    const o = document.createElement('option');
-    o.value = c; o.textContent = c;
-    catSel.appendChild(o);
-  });
+function rebuildFilterOptions() {
+  if (!filterMeta) return;
 
-  // Subcategory
-  const subSel = document.getElementById('f-subcategory');
-  d.subcategories.forEach(s => {
-    const o = document.createElement('option');
-    o.value = s; o.textContent = s;
-    subSel.appendChild(o);
-  });
+  const selCat = document.getElementById('f-category').value;
+  const selSub = document.getElementById('f-subcategory').value;
+  const selVendor = document.getElementById('f-vendor').value;
 
-  // Vendors
-  const vSel = document.getElementById('f-vendor');
-  d.vendors.forEach(v => {
+  // Determine which vendors are allowed based on selected category/subcategory
+  let allowedVendors = new Set(filterMeta.vendors.map(v => v.vendor_name));
+  if (selCat) {
+    const catVendors = filterMeta.category_to_vendors[selCat] || [];
+    allowedVendors = new Set(catVendors);
+  }
+  if (selSub) {
+    const subVendors = filterMeta.subcategory_to_vendors[selSub] || [];
+    allowedVendors = new Set([...allowedVendors].filter(v => subVendors.includes(v)));
+  }
+
+  // Determine which categories are allowed based on selected vendor
+  let allowedCats = new Set(filterMeta.categories);
+  if (selVendor) {
+    const vCats = filterMeta.vendor_to_categories[selVendor] || [];
+    allowedCats = new Set(vCats);
+  }
+
+  // Determine which subcategories are allowed based on selected category + vendor
+  let allowedSubs = new Set(filterMeta.subcategories);
+  if (selCat) {
+    allowedSubs = new Set(
+      filterMeta.subcategories.filter(s => filterMeta.subcategory_to_category[s] === selCat)
+    );
+  }
+  if (selVendor) {
+    const vSubs = filterMeta.vendor_to_subcategories[selVendor] || [];
+    allowedSubs = new Set([...allowedSubs].filter(s => vSubs.includes(s)));
+  }
+
+  populateSelect('f-category', [...allowedCats].sort(), selCat, 'All categories');
+  populateSelect('f-subcategory', [...allowedSubs].sort(), selSub, 'All subcategories');
+  populateSelect('f-vendor',
+    filterMeta.vendors
+      .filter(v => allowedVendors.has(v.vendor_name))
+      .map(v => ({value: v.vendor_name, label: v.vendor_name + ' (' + v.product_count + ')'})),
+    selVendor,
+    'All vendors'
+  );
+}
+
+function populateSelect(id, items, selectedValue, allLabel) {
+  const sel = document.getElementById(id);
+  const current = sel.value;
+  sel.innerHTML = '';
+  const allOpt = document.createElement('option');
+  allOpt.value = ''; allOpt.textContent = allLabel;
+  sel.appendChild(allOpt);
+  items.forEach(item => {
     const o = document.createElement('option');
-    o.value = v.vendor_name;
-    o.textContent = v.vendor_name + ' (' + v.product_count + ')';
-    vSel.appendChild(o);
+    if (typeof item === 'string') { o.value = item; o.textContent = item; }
+    else { o.value = item.value; o.textContent = item.label; }
+    sel.appendChild(o);
   });
+  // Restore selection if still valid
+  if (selectedValue && [...sel.options].some(o => o.value === selectedValue)) {
+    sel.value = selectedValue;
+  } else if (selectedValue) {
+    // Selection is no longer valid — clear it and re-search
+    sel.value = '';
+  }
+}
+
+function onFilterChange() {
+  rebuildFilterOptions();
+  debouncedSearch();
 }
 
 // Init
 loadStats();
-loadFilters();
-search();
+(async () => { await loadFilters(); search(); })();
 </script>
 </body>
 </html>

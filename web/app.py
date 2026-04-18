@@ -43,37 +43,93 @@ async def index(request: Request):
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
+_filter_cache: dict = {}
+_filter_cache_ts: float = 0
+
+
 @app.get("/api/filters")
 async def get_filters():
-    """Return all filter options: vendors, categories, subcategories."""
+    """Return filter options with cross-reference metadata for interactive filtering.
+
+    - vendors: [{name, product_count, categories: [...]}]
+    - categories: [str]
+    - subcategories: [{name, category, vendor_names: [...]}]
+    - category_to_vendors: {category: [vendor_name]}
+    - vendor_to_subcategories: {vendor_name: [subcategory]}
+    """
+    import time
+    global _filter_cache, _filter_cache_ts
+
+    # 5-minute in-memory cache
+    if _filter_cache and time.time() - _filter_cache_ts < 300:
+        return JSONResponse(_filter_cache)
+
+    # Build from vendors collection (pre-aggregated)
     vendors_list = []
+    category_to_vendors: dict[str, set] = {}
+    vendor_to_subcategories: dict[str, set] = {}
+    vendor_to_categories: dict[str, set] = {}
+    subcategory_to_categories: dict[str, set] = {}
+    subcategory_to_vendors: dict[str, set] = {}
     categories_set = set()
-    subcategories_set = set()
 
     for doc in db().collection("wechat_vendors").order_by(
         "product_count", direction=firestore.Query.DESCENDING
     ).stream():
         v = doc.to_dict()
         name = str(v.get("vendor_name", "")).strip()
-        if name:
-            vendors_list.append({
-                "vendor_name": name,
-                "product_count": int(v.get("product_count", 0) or 0),
-                "file_count": int(v.get("file_count", 0) or 0),
-                "subcategories": [str(s) for s in v.get("subcategories", []) if s],
-            })
-        for c in v.get("categories", []):
-            if isinstance(c, str) and c.strip():
-                categories_set.add(c.strip())
-        for sc in v.get("subcategories", []):
-            if isinstance(sc, str) and sc.strip():
-                subcategories_set.add(sc.strip())
+        if not name:
+            continue
 
-    return JSONResponse({
+        vendor_cats = [str(c).strip() for c in v.get("categories", []) if isinstance(c, str) and c.strip()]
+        vendor_subs = [str(s).strip() for s in v.get("subcategories", []) if isinstance(s, str) and s.strip()]
+
+        vendors_list.append({
+            "vendor_name": name,
+            "product_count": int(v.get("product_count", 0) or 0),
+            "file_count": int(v.get("file_count", 0) or 0),
+            "categories": vendor_cats,
+            "subcategories": vendor_subs,
+        })
+
+        vendor_to_categories[name] = set(vendor_cats)
+        vendor_to_subcategories[name] = set(vendor_subs)
+        for c in vendor_cats:
+            categories_set.add(c)
+            category_to_vendors.setdefault(c, set()).add(name)
+        for s in vendor_subs:
+            subcategory_to_vendors.setdefault(s, set()).add(name)
+
+    # Build subcategory -> category lookup from products (sample 1 product per subcategory)
+    # This is approximate — a subcategory might appear in multiple categories
+    from google.cloud.firestore_v1.base_query import FieldFilter
+    for sub in subcategory_to_vendors.keys():
+        try:
+            result = db().collection("wechat_products").where(
+                filter=FieldFilter("subcategory", "==", sub)
+            ).limit(1).stream()
+            for p in result:
+                cat = p.to_dict().get("category", "").strip()
+                if cat:
+                    subcategory_to_categories.setdefault(sub, set()).add(cat)
+                break
+        except Exception:
+            pass
+
+    response = {
         "vendors": vendors_list,
         "categories": sorted(categories_set),
-        "subcategories": sorted(subcategories_set),
-    })
+        "subcategories": sorted(subcategory_to_vendors.keys()),
+        "category_to_vendors": {k: sorted(v) for k, v in category_to_vendors.items()},
+        "vendor_to_categories": {k: sorted(v) for k, v in vendor_to_categories.items()},
+        "vendor_to_subcategories": {k: sorted(v) for k, v in vendor_to_subcategories.items()},
+        "subcategory_to_category": {k: (sorted(v)[0] if v else "") for k, v in subcategory_to_categories.items()},
+        "subcategory_to_vendors": {k: sorted(v) for k, v in subcategory_to_vendors.items()},
+    }
+
+    _filter_cache = response
+    _filter_cache_ts = time.time()
+    return JSONResponse(response)
 
 
 @app.get("/api/products")
@@ -206,6 +262,13 @@ async def get_preview(file_id: str, page: int = 1):
             headers={"Cache-Control": "public, max-age=86400"},
         )
 
+    # Skip files over 200MB — too slow to preview
+    file_size = int(file_data.get("file_size_bytes", 0) or 0)
+    if file_size > 200 * 1024 * 1024:
+        placeholder = _generate_placeholder(f"{file_data.get('category','Large File')}")
+        return Response(content=placeholder, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
     # Otherwise render it
     source_blob_name = gcs_path.replace(f"gs://{BUCKET}/", "")
     source_blob = bucket.blob(source_blob_name)
@@ -214,30 +277,32 @@ async def get_preview(file_id: str, page: int = 1):
         if ext == "pdf":
             thumb_bytes = _render_pdf_page(source_blob, page)
         elif ext in ("jpg", "jpeg", "png", "webp"):
-            # Direct image: resize and stream
             thumb_bytes = _resize_image(source_blob)
         elif ext == "xlsx":
             thumb_bytes = _render_xlsx_preview(source_blob)
         elif ext == "pptx":
             thumb_bytes = _render_pptx_slide(source_blob, page)
         else:
-            return JSONResponse({"error": f"preview not supported for .{ext}"}, status_code=415)
+            thumb_bytes = _generate_placeholder(ext.upper())
 
-        if thumb_bytes:
-            # Cache in GCS
-            try:
-                thumb_blob.upload_from_string(thumb_bytes, content_type="image/jpeg")
-            except Exception:
-                pass  # caching is best-effort
-            return Response(
-                content=thumb_bytes,
-                media_type="image/jpeg",
-                headers={"Cache-Control": "public, max-age=86400"},
-            )
+        if not thumb_bytes:
+            thumb_bytes = _generate_placeholder(file_data.get("file_type", "Document"))
+
+        # Cache in GCS (best-effort)
+        try:
+            thumb_blob.upload_from_string(thumb_bytes, content_type="image/jpeg")
+        except Exception:
+            pass
+        return Response(
+            content=thumb_bytes,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
     except Exception as e:
-        return JSONResponse({"error": f"rendering failed: {e}"}, status_code=500)
-
-    return JSONResponse({"error": "no content"}, status_code=500)
+        # Return placeholder instead of 500 so frontend can still show something
+        placeholder = _generate_placeholder(file_data.get("file_type", "Preview Error"))
+        return Response(content=placeholder, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=300"})
 
 
 def _resize_image(blob, max_width: int = 400) -> bytes:
