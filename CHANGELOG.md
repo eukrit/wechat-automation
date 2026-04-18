@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.8.0 — 2026-04-18
+
+### Added
+- **Infinite scroll**: product grid auto-appends next 60 items as you scroll down
+- `IntersectionObserver` watches a sentinel element 400px below the grid; triggers `search(true)` to append
+- Status bar shows "Showing N of M" while more available, "All X products loaded" when done
+- Fresh search/filter change resets offset + clears grid seamlessly
+- Removed: prev/next page buttons, "Apply filters" button
+
+### Files changed
+- `web/templates/index.html` — new `search(append)` overload, `enableScrollObserver`, sentinel element, load-status bar
+
+### Outcome
+- Smoother browsing — no clicking through pages
+- Single-page continuous experience on desktop and mobile
+- Live: https://wechat-web-rg5gmtwrfa-as.a.run.app
+
 ## v0.7.0 — 2026-04-18
 
 ### Added
