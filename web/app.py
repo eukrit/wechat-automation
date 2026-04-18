@@ -173,6 +173,158 @@ async def get_vendor(vendor_id: str):
     return JSONResponse(vendor)
 
 
+@app.get("/api/preview/{file_id}")
+async def get_preview(file_id: str, page: int = 1):
+    """Render a page of a source file as JPEG thumbnail, cache in GCS.
+
+    Returns the signed URL to the cached thumbnail.
+    """
+    from datetime import timedelta
+
+    doc = db().collection("wechat_files").document(file_id).get()
+    if not doc.exists:
+        return JSONResponse({"error": "File not found"}, status_code=404)
+
+    file_data = doc.to_dict()
+    gcs_path = file_data.get("gcs_path", "")
+    ext = file_data.get("file_extension", "").lower()
+
+    if not gcs_path:
+        return JSONResponse({"error": "No source file"}, status_code=404)
+
+    # Cached thumbnail path
+    thumb_name = f"_thumbnails/{file_id}_p{page}.jpg"
+    client = storage.Client(project=PROJECT)
+    bucket = client.bucket(BUCKET)
+    thumb_blob = bucket.blob(thumb_name)
+
+    # If thumbnail doesn't exist, render it
+    if not thumb_blob.exists():
+        # Download source file
+        source_blob_name = gcs_path.replace(f"gs://{BUCKET}/", "")
+        source_blob = bucket.blob(source_blob_name)
+
+        try:
+            if ext == "pdf":
+                thumb_bytes = _render_pdf_page(source_blob, page)
+            elif ext in ("jpg", "jpeg", "png", "webp"):
+                # Direct image: return a signed URL to the original
+                url = source_blob.generate_signed_url(
+                    version="v4", expiration=timedelta(hours=6), method="GET"
+                )
+                return JSONResponse({"url": url, "direct": True})
+            elif ext == "xlsx":
+                thumb_bytes = _render_xlsx_preview(source_blob)
+            elif ext == "pptx":
+                thumb_bytes = _render_pptx_slide(source_blob, page)
+            else:
+                return JSONResponse({"error": f"preview not supported for .{ext}"}, status_code=415)
+
+            if thumb_bytes:
+                thumb_blob.upload_from_string(thumb_bytes, content_type="image/jpeg")
+        except Exception as e:
+            return JSONResponse({"error": f"rendering failed: {e}"}, status_code=500)
+
+    url = thumb_blob.generate_signed_url(
+        version="v4", expiration=timedelta(hours=6), method="GET"
+    )
+    return JSONResponse({"url": url})
+
+
+def _render_pdf_page(blob, page_num: int, max_width: int = 400) -> bytes:
+    """Render a PDF page as JPEG bytes."""
+    import io
+    import fitz  # PyMuPDF
+
+    pdf_bytes = blob.download_as_bytes()
+    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page_idx = min(max(page_num - 1, 0), len(pdf_doc) - 1)
+    page_obj = pdf_doc[page_idx]
+
+    # Render at ~150 DPI, then resize
+    pix = page_obj.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+    img_bytes = pix.tobytes("jpeg", jpg_quality=80)
+
+    # Resize
+    from PIL import Image
+    img = Image.open(io.BytesIO(img_bytes))
+    if img.width > max_width:
+        ratio = max_width / img.width
+        img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=75)
+    pdf_doc.close()
+    return out.getvalue()
+
+
+def _render_xlsx_preview(blob) -> bytes:
+    """Extract first embedded image from xlsx, or generate a text preview."""
+    import io
+    from zipfile import ZipFile
+
+    xlsx_bytes = blob.download_as_bytes()
+    try:
+        with ZipFile(io.BytesIO(xlsx_bytes)) as z:
+            # Find first image in xl/media/
+            for name in z.namelist():
+                if name.startswith("xl/media/") and name.lower().endswith((".jpg", ".jpeg", ".png")):
+                    img_data = z.read(name)
+                    from PIL import Image
+                    img = Image.open(io.BytesIO(img_data)).convert("RGB")
+                    max_w = 400
+                    if img.width > max_w:
+                        ratio = max_w / img.width
+                        img = img.resize((max_w, int(img.height * ratio)), Image.LANCZOS)
+                    out = io.BytesIO()
+                    img.save(out, format="JPEG", quality=75)
+                    return out.getvalue()
+    except Exception:
+        pass
+
+    # Fallback: generate a placeholder
+    return _generate_placeholder("Spreadsheet")
+
+
+def _render_pptx_slide(blob, slide_num: int) -> bytes:
+    """Extract slide image from pptx."""
+    import io
+    from zipfile import ZipFile
+
+    pptx_bytes = blob.download_as_bytes()
+    try:
+        with ZipFile(io.BytesIO(pptx_bytes)) as z:
+            # Try slide thumbnail first
+            media_files = sorted([n for n in z.namelist() if n.startswith("ppt/media/") and n.lower().endswith((".jpg", ".jpeg", ".png"))])
+            if media_files:
+                idx = min(max(slide_num - 1, 0), len(media_files) - 1)
+                img_data = z.read(media_files[idx])
+                from PIL import Image
+                img = Image.open(io.BytesIO(img_data)).convert("RGB")
+                max_w = 400
+                if img.width > max_w:
+                    ratio = max_w / img.width
+                    img = img.resize((max_w, int(img.height * ratio)), Image.LANCZOS)
+                out = io.BytesIO()
+                img.save(out, format="JPEG", quality=75)
+                return out.getvalue()
+    except Exception:
+        pass
+
+    return _generate_placeholder("Presentation")
+
+
+def _generate_placeholder(text: str) -> bytes:
+    """Generate a simple placeholder JPEG."""
+    import io
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (400, 300), (230, 240, 250))
+    draw = ImageDraw.Draw(img)
+    draw.text((180, 140), text, fill=(100, 120, 150))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=75)
+    return out.getvalue()
+
+
 @app.get("/api/file/{file_id}/download")
 async def get_file_url(file_id: str):
     """Get signed GCS URL for downloading a file."""

@@ -27,9 +27,16 @@
   .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
   .search-bar input { flex: 1; padding: 10px 14px; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 6px; }
   .results-info { margin-bottom: 14px; color: #475569; font-size: 14px; }
-  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
-  .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; transition: box-shadow 0.2s; }
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  @media (max-width: 900px) { .container { flex-direction: column; } aside { width: 100%; position: static; max-height: none; } }
+  @media (max-width: 500px) { .product-grid { grid-template-columns: 1fr; } header h1 { font-size: 16px; } }
+  .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; transition: box-shadow 0.2s; display: flex; flex-direction: column; }
   .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .card .img-wrap { width: 100%; height: 180px; background: linear-gradient(135deg,#f1f5f9 0%,#e0f2fe 100%); display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; cursor: pointer; }
+  .card .img-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
+  .card .img-wrap:hover img { transform: scale(1.05); }
+  .card .img-wrap .placeholder { color: #94a3b8; font-size: 13px; text-align: center; padding: 20px; }
+  .card .body { padding: 14px; flex: 1; display: flex; flex-direction: column; }
   .card .sku { font-family: monospace; font-size: 12px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px; display: inline-block; }
   .card .name { font-weight: 600; font-size: 15px; margin: 6px 0 4px 0; color: #0f172a; }
   .card .vendor { font-size: 12px; color: #0ea5e9; margin-bottom: 8px; }
@@ -65,28 +72,28 @@
   <aside>
     <div class="filter-group">
       <h3>Category</h3>
-      <select id="f-category">
+      <select id="f-category" onchange="debouncedSearch()">
         <option value="">All categories</option>
       </select>
     </div>
 
     <div class="filter-group">
       <h3>Subcategory</h3>
-      <select id="f-subcategory">
+      <select id="f-subcategory" onchange="debouncedSearch()">
         <option value="">All subcategories</option>
       </select>
     </div>
 
     <div class="filter-group">
       <h3>Vendor</h3>
-      <select id="f-vendor">
+      <select id="f-vendor" onchange="debouncedSearch()">
         <option value="">All vendors</option>
       </select>
     </div>
 
     <div class="filter-group">
       <h3>Currency</h3>
-      <select id="f-currency">
+      <select id="f-currency" onchange="debouncedSearch()">
         <option value="">Any</option>
         <option value="USD">USD</option>
         <option value="CNY">CNY</option>
@@ -98,8 +105,8 @@
     <div class="filter-group">
       <h3>Price Range</h3>
       <div class="price-range">
-        <input type="number" id="f-min" placeholder="min" min="0">
-        <input type="number" id="f-max" placeholder="max" min="0">
+        <input type="number" id="f-min" placeholder="min" min="0" oninput="debouncedSearch()">
+        <input type="number" id="f-max" placeholder="max" min="0" oninput="debouncedSearch()">
       </div>
     </div>
 
@@ -115,8 +122,7 @@
 
     <div id="view-products">
       <div class="search-bar">
-        <input type="text" id="q" placeholder="Search name, SKU, material, description..." onkeydown="if(event.key==='Enter')search()">
-        <button onclick="search()" style="padding:10px 20px;background:#0ea5e9;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Search</button>
+        <input type="text" id="q" placeholder="Search name, SKU, material, description..." oninput="debouncedSearch()">
       </div>
 
       <div class="results-info" id="results-info">Showing products...</div>
@@ -173,6 +179,7 @@ async function search() {
 
   const grid = document.getElementById('product-grid');
   grid.innerHTML = d.products.map(p => renderCard(p)).join('');
+  setupImageObserver();
 
   const pageNum = Math.floor(offset / limit) + 1;
   const maxPage = Math.ceil(d.total / limit) || 1;
@@ -181,21 +188,67 @@ async function search() {
   document.getElementById('next-btn').disabled = offset + limit >= d.total;
 }
 
+// Debounced responsive search
+let searchDebounce;
+function debouncedSearch() {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => { offset = 0; search(); }, 350);
+}
+
 function renderCard(p) {
   const priceStr = p.unit_price > 0 ? ('$' + p.unit_price.toFixed(2) + ' ' + (p.currency||'')) : 'No price';
+  const imgId = 'img-' + Math.random().toString(36).substr(2,9);
+  const previewPage = p.source_page || 1;
   return `<div class="card">
-    ${p.sku ? '<span class="sku">' + esc(p.sku) + '</span>' : ''}
-    <div class="name">${esc(p.product_name || '—')}</div>
-    ${p.vendor_name ? '<div class="vendor">' + esc(p.vendor_name) + '</div>' : ''}
-    ${p.category ? '<span class="cat">' + esc(p.category) + '</span>' : ''}
-    ${p.subcategory ? '<span class="subcat">' + esc(p.subcategory) + '</span>' : ''}
-    <div class="price">${priceStr}</div>
-    ${p.description ? '<div class="desc">' + esc(p.description.substring(0,120)) + (p.description.length > 120 ? '…' : '') + '</div>' : ''}
-    ${p.dimensions ? '<div class="meta">📐 ' + esc(p.dimensions) + '</div>' : ''}
-    ${p.material ? '<div class="meta">🧱 ' + esc(p.material.substring(0,50)) + '</div>' : ''}
-    ${p.moq ? '<div class="meta">📦 MOQ: ' + p.moq + '</div>' : ''}
-    ${p.source_file_id ? '<div class="source" onclick="downloadFile(\'' + p.source_file_id + '\')">📄 ' + esc((p.source_filename||'').substring(0,50)) + '</div>' : ''}
+    <div class="img-wrap" onclick="${p.source_file_id ? 'downloadFile(\''+p.source_file_id+'\')' : ''}" data-file="${p.source_file_id||''}" data-page="${previewPage}">
+      <span class="placeholder" id="${imgId}">${esc(p.category || 'Product')}</span>
+    </div>
+    <div class="body">
+      ${p.sku ? '<span class="sku">' + esc(p.sku) + '</span>' : ''}
+      <div class="name">${esc(p.product_name || '—')}</div>
+      ${p.vendor_name ? '<div class="vendor">' + esc(p.vendor_name) + '</div>' : ''}
+      ${p.category ? '<span class="cat">' + esc(p.category) + '</span>' : ''}
+      ${p.subcategory ? '<span class="subcat">' + esc(p.subcategory) + '</span>' : ''}
+      <div class="price">${priceStr}</div>
+      ${p.description ? '<div class="desc">' + esc(p.description.substring(0,120)) + (p.description.length > 120 ? '…' : '') + '</div>' : ''}
+      ${p.dimensions ? '<div class="meta">📐 ' + esc(p.dimensions) + '</div>' : ''}
+      ${p.material ? '<div class="meta">🧱 ' + esc(p.material.substring(0,50)) + '</div>' : ''}
+      ${p.moq ? '<div class="meta">📦 MOQ: ' + p.moq + '</div>' : ''}
+      ${p.source_file_id ? '<div class="source" onclick="event.stopPropagation();downloadFile(\'' + p.source_file_id + '\')">📄 ' + esc((p.source_filename||'').substring(0,50)) + '</div>' : ''}
+    </div>
   </div>`;
+}
+
+// IntersectionObserver for lazy-loading preview images
+let imgObserver;
+function setupImageObserver() {
+  if (imgObserver) imgObserver.disconnect();
+  imgObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const wrap = entry.target;
+        const fileId = wrap.dataset.file;
+        const page = wrap.dataset.page || 1;
+        if (!fileId || wrap.dataset.loaded) return;
+        wrap.dataset.loaded = '1';
+        fetch('/api/preview/' + fileId + '?page=' + page)
+          .then(r => r.json())
+          .then(d => {
+            if (d.url) {
+              const img = new Image();
+              img.src = d.url;
+              img.onload = () => { wrap.innerHTML = ''; wrap.appendChild(img); };
+            }
+          })
+          .catch(() => {});
+        imgObserver.unobserve(wrap);
+      }
+    });
+  }, { rootMargin: '200px' });
+
+  document.querySelectorAll('.img-wrap[data-file]').forEach(el => {
+    if (el.dataset.file && !el.dataset.loaded) imgObserver.observe(el);
+  });
 }
 
 function esc(s) {
