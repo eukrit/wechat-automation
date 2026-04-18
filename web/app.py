@@ -13,8 +13,6 @@ from typing import Any
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 # Add parent for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -28,8 +26,6 @@ BUCKET = os.environ.get("GCS_BUCKET", "wechat-documents-attachments")
 
 app = FastAPI(title="WeChat Products Browser")
 web_dir = Path(__file__).parent
-app.mount("/static", StaticFiles(directory=str(web_dir / "static")), name="static")
-templates = Jinja2Templates(directory=str(web_dir / "templates"))
 
 _db_cache: dict[str, firestore.Client] = {}
 
