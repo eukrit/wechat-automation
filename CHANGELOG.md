@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.6.0 — 2026-04-18
+
+### Added
+- **Image modal**: clicking a thumbnail opens the image in a lightbox overlay (no more accidental download), with an explicit Download button in the modal bar
+- **Interactive cascading filters**:
+  * Selecting a category narrows the vendor dropdown to only vendors with products in that category
+  * Selecting a vendor narrows categories + subcategories to that vendor's offerings
+  * Selecting a subcategory further narrows vendors
+- `/api/filters` now returns 5 cross-reference maps: `category_to_vendors`, `vendor_to_categories`, `vendor_to_subcategories`, `subcategory_to_category`, `subcategory_to_vendors` (5-minute in-memory cache)
+- Preview endpoint returns a placeholder JPEG on rendering failure instead of HTTP 500
+- Files >200MB skip rendering and return a placeholder
+
+### Fixed
+- Cloud Run memory was 512Mi → bumped to 2Gi + CPU 2 + 300s timeout + concurrency 10 (was OOM-crashing on large file preview)
+- Lost HTTP/2 stream on some files (worked fine with HTTP/1.1 retry) — Cloud Run resource bump resolves
+
+### Files changed
+- `web/app.py` — expanded `/api/filters` response, size guardrail on previews
+- `web/templates/index.html` — image modal, interactive filter logic, `onFilterChange()` cascading
+
+### Outcome
+- Lighting filter → 21 matching vendors shown
+- Furniture filter → 36 matching vendors shown
+- Preview click → modal (not download). Download button explicit.
+- Live: https://wechat-web-rg5gmtwrfa-as.a.run.app
+
 ## v0.5.0 — 2026-04-18
 
 ### Added
