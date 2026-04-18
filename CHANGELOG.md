@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.5.0 — 2026-04-18
+
+### Added
+- **Responsive search**: 350ms debounced search-as-you-type on text input + all filters (Search button removed)
+- **Product images**: 180px preview area on every card, lazy-loaded via IntersectionObserver
+- `/api/preview/{file_id}?page=N` renders source file page as JPEG thumbnail
+- PDF rendering via PyMuPDF (fitz) at 2x zoom → 400px JPEG q75
+- Excel/PPTX preview: extracts first embedded image from `xl/media/` or `ppt/media/`
+- Thumbnail cache in `gs://wechat-documents-attachments/_thumbnails/`
+- Mobile responsive: sidebar collapses <900px, single-column cards <500px
+
+### Fixed
+- `generate_signed_url()` failure on Cloud Run (metadata creds lack private key) → stream bytes through FastAPI
+- `/api/file/{id}/download` now streams source file directly with Content-Disposition
+
+### Files changed
+- `web/app.py` — preview + streaming download endpoints, PDF/xlsx/pptx rendering helpers
+- `web/templates/index.html` — debounced search, lazy image loader, responsive CSS
+- `web/requirements.txt` — pymupdf + pillow
+
+### Outcome
+- 34,582 products now show lazy-loaded thumbnails
+- Search feels instant — results update while typing
+- Live: https://wechat-web-rg5gmtwrfa-as.a.run.app
+
 ## v0.4.1 — 2026-04-18
 
 ### Fixed
