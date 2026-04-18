@@ -141,14 +141,17 @@ async def search_products(
     min_price: float = 0,
     max_price: float = 0,
     currency: str = "",
+    sort: str = "relevance",
     limit: int = Query(50, le=500),
     offset: int = 0,
 ):
-    """Search products with filters. Returns JSON."""
+    """Search products with filters + sort. Returns JSON.
+
+    sort: relevance (default) | name_asc | name_desc | vendor_asc | vendor_desc |
+          price_asc | price_desc | newest | sku
+    """
     query = db().collection("wechat_products")
 
-    # Firestore allows only one inequality + equality filters
-    # Prefer equality filters for speed
     if vendor:
         query = query.where(filter=FieldFilter("vendor_name", "==", vendor))
     elif category:
@@ -158,8 +161,7 @@ async def search_products(
     elif currency:
         query = query.where(filter=FieldFilter("currency", "==", currency))
 
-    # Pull more than limit to allow client-side secondary filtering
-    results = [doc.to_dict() for doc in query.limit(2000).stream()]
+    results = [doc.to_dict() for doc in query.limit(5000).stream()]
 
     # Client-side filters
     q_lower = q.lower()
@@ -189,6 +191,31 @@ async def search_products(
                 continue
         filtered.append(p)
 
+    # Sort
+    def _safe_price(p):
+        try:
+            return float(p.get("unit_price") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    if sort == "name_asc":
+        filtered.sort(key=lambda p: str(p.get("product_name", "")).lower())
+    elif sort == "name_desc":
+        filtered.sort(key=lambda p: str(p.get("product_name", "")).lower(), reverse=True)
+    elif sort == "vendor_asc":
+        filtered.sort(key=lambda p: (str(p.get("vendor_name", "")).lower(), str(p.get("product_name", "")).lower()))
+    elif sort == "vendor_desc":
+        filtered.sort(key=lambda p: (str(p.get("vendor_name", "")).lower(), str(p.get("product_name", "")).lower()), reverse=True)
+    elif sort == "price_asc":
+        filtered.sort(key=lambda p: (_safe_price(p) if _safe_price(p) > 0 else float('inf')))
+    elif sort == "price_desc":
+        filtered.sort(key=lambda p: _safe_price(p), reverse=True)
+    elif sort == "newest":
+        filtered.sort(key=lambda p: str(p.get("extracted_at", "") or p.get("created_at", "")), reverse=True)
+    elif sort == "sku":
+        filtered.sort(key=lambda p: str(p.get("sku", "")).lower())
+    # else relevance: keep Firestore default order
+
     total = len(filtered)
     page = filtered[offset:offset + limit]
 
@@ -196,6 +223,7 @@ async def search_products(
         "total": total,
         "offset": offset,
         "limit": limit,
+        "sort": sort,
         "products": page,
     })
 

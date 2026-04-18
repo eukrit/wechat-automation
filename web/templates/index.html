@@ -139,6 +139,17 @@
     <div id="view-products">
       <div class="search-bar">
         <input type="text" id="q" placeholder="Search name, SKU, material, description..." oninput="debouncedSearch()">
+        <select id="f-sort" onchange="onFilterChange()" style="padding:10px 14px;font-size:14px;border:1px solid #cbd5e1;border-radius:6px;background:white;cursor:pointer;">
+          <option value="relevance">Sort: Relevance</option>
+          <option value="name_asc">Name A–Z</option>
+          <option value="name_desc">Name Z–A</option>
+          <option value="vendor_asc">Vendor A–Z</option>
+          <option value="vendor_desc">Vendor Z–A</option>
+          <option value="price_asc">Price Low → High</option>
+          <option value="price_desc">Price High → Low</option>
+          <option value="sku">SKU</option>
+          <option value="newest">Newest first</option>
+        </select>
       </div>
 
       <nav class="breadcrumb" id="breadcrumb" aria-label="Active filters"></nav>
@@ -200,6 +211,7 @@ async function search(append = false) {
     currency: document.getElementById('f-currency').value,
     min_price: document.getElementById('f-min').value || 0,
     max_price: document.getElementById('f-max').value || 0,
+    sort: document.getElementById('f-sort').value || 'relevance',
     limit: limit,
     offset: offset,
   });
@@ -259,18 +271,20 @@ function debouncedSearch() {
 }
 
 // --- URL sync: filter state <-> query params ---
-const FILTER_FIELDS = ['q','category','subcategory','vendor','currency','min_price','max_price'];
+const FILTER_FIELDS = ['q','category','subcategory','vendor','currency','min_price','max_price','sort'];
 const FILTER_ID = {
   q: 'q', category: 'f-category', subcategory: 'f-subcategory',
   vendor: 'f-vendor', currency: 'f-currency',
-  min_price: 'f-min', max_price: 'f-max',
+  min_price: 'f-min', max_price: 'f-max', sort: 'f-sort',
 };
 
 function getFilterState() {
   const state = {};
   for (const f of FILTER_FIELDS) {
     const v = document.getElementById(FILTER_ID[f]).value;
-    if (v && v !== '0') state[f] = v;
+    if (!v || v === '0') continue;
+    if (f === 'sort' && v === 'relevance') continue;  // don't persist default sort
+    state[f] = v;
   }
   return state;
 }
@@ -387,6 +401,7 @@ function clearFilters() {
   document.getElementById('f-currency').value = '';
   document.getElementById('f-min').value = '';
   document.getElementById('f-max').value = '';
+  document.getElementById('f-sort').value = 'relevance';
   rebuildFilterOptions();
   offset = 0;
   syncUrl();
