@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.4.1 — 2026-04-18
+
+### Fixed
+- Cloud Run index (`/`) returned 500 `unhashable type: 'dict'` when Jinja cached vendor dicts
+- Moved vendor/category/subcategory population to client-side via `/api/filters`
+- `index()` now returns minimal static HTML, all data loaded via AJAX
+
+### Files changed
+- `web/app.py` — new `/api/filters` endpoint, simplified index route
+- `web/templates/index.html` — removed Jinja loops, added `loadFilters()` JS
+
+### Outcome
+- Index page returns 200; filters (19 categories, 1,348 subcategories, 94 vendors) populate dynamically
+- Live: https://wechat-web-rg5gmtwrfa-as.a.run.app
+
+## v0.4.0 — 2026-04-18
+
+### Added
+- FastAPI web app `web/app.py` deployed to Cloud Run (`wechat-web`)
+- HTML UI `web/templates/index.html` with search bar, filters, product cards
+- API endpoints: `/api/products`, `/api/vendors`, `/api/vendor/{id}`, `/api/file/{id}/download`, `/api/stats`, `/api/filters`, `/health`
+- `web/Dockerfile` + `web/cloudbuild-web.yaml` for Cloud Run deployment
+- Signed GCS URLs for file downloads from product cards
+
+### Outcome
+- Live at https://wechat-web-rg5gmtwrfa-as.a.run.app (allUsers can invoke)
+- Handles 94 vendors, 498 files, 34,582 products
+
+## v0.3.0 — 2026-04-18
+
+### Added
+- Product category + subcategory enrichment via Gemini 2.5 Flash (Vertex AI)
+- `scripts/enrich_categories.py` batch-classifies existing products (80 per call)
+- `sync_now.py` Phase 2b: auto-enriches up to 500 unclassified products per cycle
+- `WeChatVendor.subcategories` field for vendor catalog browsing
+- Updated Gemini prompt to require both category + subcategory
+
+### Outcome
+- 34,582 products classified 100% (category + subcategory)
+- Categories: Furniture (13,570), Lighting (4,853), Hardware (2,334), Wall Panel (1,915), Playground (1,693)
+
+## v0.2.0 — 2026-04-17
+
+### Added
+- `extractors/pdf_extractor.py` pdfplumber table extraction
+- `extractors/gemini_extractor.py` Vertex AI Gemini Vision fallback
+- `extractors/pptx_extractor.py` slide text + image extraction
+- `scripts/convert_and_extract.py` DOCX/PPTX → PDF converter (python-docx, python-pptx, reportlab)
+- `scripts/rematch_vendors.py` with 90+ vendor aliases
+- `scripts/build_vendors.py` rebuilds `wechat_vendors` aggregation
+- `scripts/sync_now.py` 15-min CRON pipeline: ingest → match → extract → rebuild vendors → status
+- PDF chunking for oversized catalogs (adaptive sizing based on MB/page)
+- GCS upload for files >20MB (Gemini Vision via URI)
+- Switched from Gemini API key to GCP Service Account (Vertex AI)
+
+### Outcome
+- 408 files fully processed (84%)
+- 34,582 products extracted (Excel 18,256 + Gemini 13,931 + pdfplumber 2,101)
+- 92 vendors aggregated
+
 ## v0.1.0 — 2026-04-10
 
 ### Added

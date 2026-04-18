@@ -42,29 +42,41 @@ def db() -> firestore.Client:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Main browse/search page."""
-    # Get aggregate stats
-    vendors = [d.to_dict() for d in db().collection("wechat_vendors").order_by(
-        "product_count", direction=firestore.Query.DESCENDING
-    ).limit(100).stream()]
+    """Main browse/search page. Returns minimal HTML — data loaded via AJAX."""
+    html_path = Path(__file__).parent / "templates" / "index.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
-    # Distinct categories from products
+
+@app.get("/api/filters")
+async def get_filters():
+    """Return all filter options: vendors, categories, subcategories."""
+    vendors_list = []
     categories_set = set()
     subcategories_set = set()
-    for v in vendors:
+
+    for doc in db().collection("wechat_vendors").order_by(
+        "product_count", direction=firestore.Query.DESCENDING
+    ).stream():
+        v = doc.to_dict()
+        name = str(v.get("vendor_name", "")).strip()
+        if name:
+            vendors_list.append({
+                "vendor_name": name,
+                "product_count": int(v.get("product_count", 0) or 0),
+                "file_count": int(v.get("file_count", 0) or 0),
+                "subcategories": [str(s) for s in v.get("subcategories", []) if s],
+            })
         for c in v.get("categories", []):
-            if c and c.strip():
+            if isinstance(c, str) and c.strip():
                 categories_set.add(c.strip())
         for sc in v.get("subcategories", []):
-            if sc and sc.strip():
+            if isinstance(sc, str) and sc.strip():
                 subcategories_set.add(sc.strip())
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "vendors": vendors,
+    return JSONResponse({
+        "vendors": vendors_list,
         "categories": sorted(categories_set),
         "subcategories": sorted(subcategories_set),
-        "total_vendors": len(vendors),
     })
 
 

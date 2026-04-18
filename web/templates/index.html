@@ -67,7 +67,6 @@
       <h3>Category</h3>
       <select id="f-category">
         <option value="">All categories</option>
-        {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
       </select>
     </div>
 
@@ -75,7 +74,6 @@
       <h3>Subcategory</h3>
       <select id="f-subcategory">
         <option value="">All subcategories</option>
-        {% for s in subcategories %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
       </select>
     </div>
 
@@ -83,9 +81,6 @@
       <h3>Vendor</h3>
       <select id="f-vendor">
         <option value="">All vendors</option>
-        {% for v in vendors %}
-          <option value="{{ v.vendor_name }}">{{ v.vendor_name }} ({{ v.product_count }})</option>
-        {% endfor %}
       </select>
     </div>
 
@@ -262,8 +257,39 @@ function filterByVendor(v) {
   search();
 }
 
+async function loadFilters() {
+  const r = await fetch('/api/filters');
+  const d = await r.json();
+
+  // Populate category select
+  const catSel = document.getElementById('f-category');
+  d.categories.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    catSel.appendChild(o);
+  });
+
+  // Subcategory
+  const subSel = document.getElementById('f-subcategory');
+  d.subcategories.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s; o.textContent = s;
+    subSel.appendChild(o);
+  });
+
+  // Vendors
+  const vSel = document.getElementById('f-vendor');
+  d.vendors.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v.vendor_name;
+    o.textContent = v.vendor_name + ' (' + v.product_count + ')';
+    vSel.appendChild(o);
+  });
+}
+
 // Init
 loadStats();
+loadFilters();
 search();
 </script>
 </body>

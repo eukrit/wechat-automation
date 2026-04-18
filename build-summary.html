@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>wechat-automation — Build Summary</title>
+  <style>
+    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { margin-bottom: 0.25rem; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+    .badge-success { background: #d1fae5; color: #065f46; }
+    .badge-failed  { background: #fee2e2; color: #991b1b; }
+    .badge-pending { background: #fef3c7; color: #92400e; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+    th { background: #fafafa; font-weight: 600; }
+    code { background: #f4f4f5; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>wechat-automation</h1>
+  <div class="meta">
+    Repo: <a href="https://github.com/eukrit/wechat-automation">https://github.com/eukrit/wechat-automation</a> ·
+    Branch: <code>main</code> ·
+    Last updated: 2026-04-18
+  </div>
+
+  <h2>Latest build</h2>
+  <p>
+    Version <strong>v0.4.1</strong> ·
+    <span class="badge badge-success">SUCCESS</span>
+  </p>
+  <p>Fixed Cloud Run 500 error by moving vendor/category/subcategory data loading from Jinja to AJAX via new <code>/api/filters</code> endpoint. Live app: <a href="https://wechat-web-rg5gmtwrfa-as.a.run.app">https://wechat-web-rg5gmtwrfa-as.a.run.app</a></p>
+  <p>
+    <a href="CHANGELOG.md">Full build log</a> ·
+    <a href="https://github.com/eukrit/wechat-automation/commit/a4c7a38">Commit a4c7a38</a>
+  </p>
+
+  <h2>System status</h2>
+  <table>
+    <thead><tr><th>Resource</th><th>Details</th></tr></thead>
+    <tbody>
+      <tr><td>Files ingested</td><td><strong>498</strong> (dedup by SHA-256)</td></tr>
+      <tr><td>Products extracted</td><td><strong>34,582</strong> (100% categorized)</td></tr>
+      <tr><td>Vendors</td><td><strong>94</strong> aggregated across 19 categories</td></tr>
+      <tr><td>Firestore DB</td><td><code>wechat-documents</code> (asia-southeast1)</td></tr>
+      <tr><td>GCS bucket</td><td><code>wechat-documents-attachments</code> (9.7 GB)</td></tr>
+      <tr><td>Cloud Run</td><td><a href="https://wechat-web-rg5gmtwrfa-as.a.run.app"><code>wechat-web</code></a></td></tr>
+      <tr><td>CRON</td><td>Windows Task Scheduler <code>WeChat Sync 15min</code> every 15 min</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Recent versions</h2>
+  <table>
+    <thead><tr><th>Version</th><th>Date</th><th>Summary</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>v0.4.1</td>
+        <td>2026-04-18</td>
+        <td>Fix 500 on / — move filter data to AJAX via <code>/api/filters</code></td>
+        <td><span class="badge badge-success">SUCCESS</span></td>
+      </tr>
+      <tr>
+        <td>v0.4.0</td>
+        <td>2026-04-18</td>
+        <td>Cloud Run web app with product browse/search/filter UI</td>
+        <td><span class="badge badge-success">SUCCESS</span></td>
+      </tr>
+      <tr>
+        <td>v0.3.0</td>
+        <td>2026-04-18</td>
+        <td>Product category + subcategory enrichment (100% of 34,582 products)</td>
+        <td><span class="badge badge-success">SUCCESS</span></td>
+      </tr>
+      <tr>
+        <td>v0.2.0</td>
+        <td>2026-04-17</td>
+        <td>Gemini Vertex AI extraction, PDF chunking, PPTX/DOCX conversion, 15-min CRON</td>
+        <td><span class="badge badge-success">SUCCESS</span></td>
+      </tr>
+      <tr>
+        <td>v0.1.0</td>
+        <td>2026-04-10</td>
+        <td>Initial ingestion pipeline, Firestore + GCS, vendor matching, Excel extractor</td>
+        <td><span class="badge badge-success">SUCCESS</span></td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>
