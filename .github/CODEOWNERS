@@ -1,0 +1,43 @@
+# CODEOWNERS — wechat-automation
+# Rule 11 (Safe-by-default collaboration) requires the owner to review every change to deploy-surface paths.
+# Branch protection on `main` enforces that CODEOWNERS review is required.
+
+# Default — everything needs owner review unless more specific rule below
+*                        @eukrit
+
+# Deploy surface — code that runs in CI/CD or controls deploys
+/cloudbuild.yaml         @eukrit
+/cloudbuild-*.yaml       @eukrit
+/Dockerfile              @eukrit
+/Dockerfile.*            @eukrit
+/.github/                @eukrit
+/.github/workflows/      @eukrit
+
+# Dependencies — a malicious package pin ships to prod
+/requirements.txt        @eukrit
+/requirements-*.txt      @eukrit
+/package.json            @eukrit
+/package-lock.json       @eukrit
+/pyproject.toml          @eukrit
+/Pipfile                 @eukrit
+
+# Auth, secrets, IAM — anything that touches identity
+/src/**/auth*.py         @eukrit
+/src/**/auth*.ts         @eukrit
+/src/**/auth*.js         @eukrit
+/src/**/gmail_client.py  @eukrit
+/src/**/gcp_auth.py      @eukrit
+/src/**/secret_manager*.py @eukrit
+/src/**/credentials*.py  @eukrit
+
+# Security docs
+/SECURITY.md             @eukrit
+/COLLABORATORS.md        @eukrit
+/PROJECT_INDEX.md        @eukrit
+/CLAUDE.md               @eukrit
+
+# Scripts that push to prod or touch secrets
+/scripts/push-secrets.sh    @eukrit
+/scripts/load-secrets.sh    @eukrit
+/scripts/deploy*.sh         @eukrit
+/scripts/apply-branch-protection.sh @eukrit
