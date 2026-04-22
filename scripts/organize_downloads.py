@@ -92,18 +92,33 @@ def safe_unique(path: Path, file_id: str) -> Path:
     return path.with_name(f"{stem}_{file_id[:8]}{ext}")
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--apply", action="store_true", help="Execute the plan (default: dry-run)")
-    ap.add_argument("--move", action="store_true", help="Move instead of copy")
-    ap.add_argument("--update-firestore", action="store_true",
-                    help="On apply, set organized_path on each wechat_files doc")
-    args = ap.parse_args()
+def organize_all(
+    apply: bool = False,
+    move: bool = False,
+    update_firestore: bool = False,
+    only_unorganized: bool = False,
+    write_plan_csv: bool = True,
+    logger=None,
+) -> dict:
+    """Plan and optionally execute the reorganization.
+
+    Args:
+        apply: If False, dry-run (no filesystem changes).
+        move: If True and apply is True, move files; else copy.
+        update_firestore: If True and apply is True, set organized_path + source_path on each moved file.
+        only_unorganized: If True, skip files whose source_path is already under TARGET_ROOT or
+                          whose organized_path matches the computed target.
+        write_plan_csv: Write the plan to <log_dir>/organize_plan.csv.
+        logger: Optional logger for info lines (defaults to print).
+
+    Returns: dict with keys {plan_rows, stats, done, errors, plan_path}.
+    """
+    log = logger.info if logger else (lambda m: print(m))
+    warn = logger.warning if logger else (lambda m: print(m))
 
     settings = get_settings()
     db = firestore_store._db()
 
-    # Build vendor doc lookup + product category counts by vendor
     vendor_docs = {d.id: d.to_dict() for d in db.collection("wechat_vendors").stream()}
     vendor_by_name = {v.get("vendor_name", ""): v for v in vendor_docs.values() if v.get("vendor_name")}
 
@@ -117,19 +132,33 @@ def main() -> None:
 
     files = [d.to_dict() for d in db.collection("wechat_files").stream()]
     plan_rows = []
-    stats = Counter()
+    stats: Counter = Counter()
 
     for f in files:
         src = f.get("source_path", "")
         fid = f.get("file_id", "")
+        organized = f.get("organized_path", "") or ""
         if not src or not Path(src).exists():
             stats["src_missing"] += 1
             plan_rows.append([fid[:12], src, "", "SKIP-missing-source"])
             continue
+
         vname = f.get("vendor_name", "")
         cat = pick_category(vname, vendor_by_name.get(vname), product_cat_map)
         tgt = target_path(f, cat)
         tgt = safe_unique(tgt, fid)
+
+        # Skip files already at their organized location.
+        if only_unorganized:
+            try:
+                already_under_root = Path(src).resolve().is_relative_to(TARGET_ROOT.resolve())
+            except Exception:
+                already_under_root = False
+            if already_under_root and (not organized or Path(organized) == Path(src)):
+                stats["already_organized"] += 1
+                plan_rows.append([fid[:12], src, src, "SKIP-already-organized"])
+                continue
+
         action = "OK"
         if tgt.exists():
             try:
@@ -142,50 +171,71 @@ def main() -> None:
             stats["to_move"] += 1
         plan_rows.append([fid[:12], src, str(tgt), action])
 
-    log_dir = Path(settings.log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = log_dir / "organize_plan.csv"
-    with plan_path.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.writer(fh)
-        w.writerow(["file_id", "source_path", "target_path", "action"])
-        w.writerows(plan_rows)
+    plan_path = None
+    if write_plan_csv:
+        log_dir = Path(settings.log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        plan_path = log_dir / "organize_plan.csv"
+        with plan_path.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["file_id", "source_path", "target_path", "action"])
+            w.writerows(plan_rows)
 
-    print("=== Plan ===")
-    for k, v in stats.items():
-        print(f"  {k:20s} {v}")
-    print(f"  total rows: {len(plan_rows)}")
-    print(f"Plan CSV: {plan_path}")
+    summary = ", ".join(f"{k}={v}" for k, v in stats.items()) or "nothing to do"
+    log(f"Organize plan: {summary} (rows={len(plan_rows)})")
 
-    if not args.apply:
-        print("\nDry-run only. Re-run with --apply to execute.")
-        return
+    if not apply:
+        return {"plan_rows": plan_rows, "stats": dict(stats), "done": 0, "errors": 0,
+                "plan_path": str(plan_path) if plan_path else ""}
 
-    print(f"\nApplying plan ({'MOVE' if args.move else 'COPY'})...")
     done = err = 0
+    files_by_short = {f.get("file_id", "")[:12]: f.get("file_id", "") for f in files}
     for fid_short, src, tgt, action in plan_rows:
         if not tgt or action.startswith("SKIP"):
             continue
         srcp, tgtp = Path(src), Path(tgt)
         try:
             tgtp.parent.mkdir(parents=True, exist_ok=True)
-            if args.move:
+            if move:
                 shutil.move(str(srcp), str(tgtp))
             else:
                 shutil.copy2(str(srcp), str(tgtp))
             done += 1
-            if args.update_firestore:
-                for f in files:
-                    if f.get("file_id", "").startswith(fid_short):
-                        doc_id = f["file_id"]
-                        db.collection("wechat_files").document(doc_id).update({
-                            "organized_path": str(tgtp),
-                        })
-                        break
+            if update_firestore:
+                doc_id = files_by_short.get(fid_short, "")
+                if doc_id:
+                    update = {"organized_path": str(tgtp)}
+                    if move:
+                        update["source_path"] = str(tgtp)
+                    db.collection("wechat_files").document(doc_id).update(update)
         except Exception as e:
             err += 1
-            print(f"  ERROR {src} -> {tgt}: {e}")
+            warn(f"ORGANIZE ERROR {src} -> {tgt}: {e}")
 
-    print(f"Done: {done} files {'moved' if args.move else 'copied'}, {err} errors.")
+    log(f"Organize done: {done} {'moved' if move else 'copied'}, {err} errors.")
+    return {"plan_rows": plan_rows, "stats": dict(stats), "done": done, "errors": err,
+            "plan_path": str(plan_path) if plan_path else ""}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--apply", action="store_true", help="Execute the plan (default: dry-run)")
+    ap.add_argument("--move", action="store_true", help="Move instead of copy")
+    ap.add_argument("--update-firestore", action="store_true",
+                    help="On apply, set organized_path on each wechat_files doc")
+    ap.add_argument("--only-unorganized", action="store_true",
+                    help="Skip files already under the target root")
+    args = ap.parse_args()
+
+    result = organize_all(
+        apply=args.apply,
+        move=args.move,
+        update_firestore=args.update_firestore,
+        only_unorganized=args.only_unorganized,
+    )
+    print(f"Plan CSV: {result['plan_path']}")
+    if not args.apply:
+        print("Dry-run only. Re-run with --apply to execute.")
 
 
 if __name__ == "__main__":

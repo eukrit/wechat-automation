@@ -277,6 +277,18 @@ def main() -> None:
         except Exception as e:
             logger.warning("Category enrichment failed: %s", e)
 
+        # --- Phase 2c: Auto-organize into Category/Vendor/YYYY-MM-DD layout ---
+        try:
+            from scripts.organize_downloads import organize_all
+            result = organize_all(
+                apply=True, move=True, update_firestore=True,
+                only_unorganized=True, write_plan_csv=False, logger=logger,
+            )
+            if result["done"]:
+                logger.info("Phase 2c: organized %d files", result["done"])
+        except Exception as e:
+            logger.warning("Auto-organize failed: %s", e)
+
         # --- Phase 3: Rebuild vendor collection ---
         all_files = [d.to_dict() for d in db.collection("wechat_files").stream()]
         all_products = [d.to_dict() for d in db.collection("wechat_products").stream()]
