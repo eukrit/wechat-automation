@@ -17,7 +17,7 @@ Auto-ingest WeChat vendor file downloads into Firestore + GCS, link to existing 
 
 ### Credentials
 All API credentials in Google Secret Manager (project: ai-agents-go).
-Local service account key: `C:\Users\eukri\OneDrive\Documents\Claude Code\Credentials Claude Code\ai-agents-go-4c81b70995db.json`
+Local service account key: `C:\Users\eukri\OneDrive\Documents\Claude Code\Credentials Claude Code\ai-agents-go-9b4219be8c01.json`
 Do NOT store credentials in code or commits.
 
 ### GCP Details

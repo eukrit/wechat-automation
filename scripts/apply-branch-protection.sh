@@ -26,33 +26,26 @@ if ! gh api "repos/$REPO" > /dev/null 2>&1; then
 fi
 
 # Apply the standard protection rules
-# Policy: admin (repo owner) CAN push directly; collaborators MUST go through PR.
-# Rationale: on personal-account repos, admins can always toggle protection off to push
-# anyway, so the bypass adds friction without real security. Instead we leave
-# enforce_admins=false, which lets the owner push directly and keeps the audit
-# trail clean. Collaborators are still gated by PR + CODEOWNERS + linear history.
-#
-# - Require PR with 1 approval (for non-admins)
+# - Require PR with 1 approval
 # - Require CODEOWNERS review
-# - Require last push approval (blocks self-approving your own pushed commits)
 # - Dismiss stale approvals on new push
-# - Require linear history (no merge commits from non-PR flows)
 # - Require conversation resolution
 # - Block force pushes and deletions
-# - enforce_admins = false (owner bypass permitted)
+# - Enforce on admins (owner included)
+# - Do not allow bypass
 gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" \
   --input - <<'EOF'
 {
   "required_status_checks": null,
-  "enforce_admins": false,
+  "enforce_admins": true,
   "required_pull_request_reviews": {
     "required_approving_review_count": 1,
     "dismiss_stale_reviews": true,
     "require_code_owner_reviews": true,
-    "require_last_push_approval": true
+    "require_last_push_approval": false
   },
   "restrictions": null,
-  "required_linear_history": true,
+  "required_linear_history": false,
   "allow_force_pushes": false,
   "allow_deletions": false,
   "block_creations": false,
