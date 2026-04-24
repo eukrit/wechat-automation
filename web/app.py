@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 # Add parent for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,8 +25,19 @@ PROJECT = os.environ.get("GCP_PROJECT_ID", "ai-agents-go")
 DATABASE = os.environ.get("FIRESTORE_DATABASE", "wechat-documents")
 BUCKET = os.environ.get("GCS_BUCKET", "wechat-documents-attachments")
 
-app = FastAPI(title="WeChat Products Browser")
+app = FastAPI(title="WeChat Products Browser", docs_url=None, redoc_url=None)
 web_dir = Path(__file__).parent
+
+# Serve consolidated static docs hub at /docs/*
+_static_dir = web_dir / "static"
+if _static_dir.exists():
+    app.mount("/docs", StaticFiles(directory=str(_static_dir / "docs"), html=True), name="docs")
+
+
+@app.get("/hub")
+async def hub_redirect():
+    """Short alias for the docs hub landing page."""
+    return RedirectResponse(url="/docs/")
 
 _db_cache: dict[str, firestore.Client] = {}
 
