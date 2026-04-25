@@ -85,9 +85,18 @@ def extract_products_for_file(file_doc: dict) -> int:
                 logger.debug("Gemini failed for %s: %s", filename, e)
     except Exception as e:
         logger.warning("Extraction failed for %s: %s", filename, e)
+        wf = firestore_store.get_file(file_id)
+        if wf:
+            wf.status = "extraction_failed"
+            wf.processing_errors.append(str(e)[:500])
+            firestore_store.upsert_file(wf)
         return 0
 
     if not products:
+        wf = firestore_store.get_file(file_id)
+        if wf:
+            wf.status = "extraction_empty"
+            firestore_store.upsert_file(wf)
         return 0
 
     saved = 0
@@ -98,11 +107,10 @@ def extract_products_for_file(file_doc: dict) -> int:
         except Exception:
             pass
 
-    if saved:
-        wf = firestore_store.get_file(file_id)
-        if wf:
-            wf.status = "product_extracted"
-            firestore_store.upsert_file(wf)
+    wf = firestore_store.get_file(file_id)
+    if wf:
+        wf.status = "product_extracted" if saved else "extraction_empty"
+        firestore_store.upsert_file(wf)
 
     return saved
 
@@ -167,12 +175,18 @@ def main() -> None:
 
     log_dir = Path(settings.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    stream_handler = logging.StreamHandler(sys.stdout)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[
-            logging.FileHandler(log_dir / "sync.log"),
-            logging.StreamHandler(),
+            logging.FileHandler(log_dir / "sync.log", encoding="utf-8"),
+            stream_handler,
         ],
     )
 
@@ -204,9 +218,10 @@ def main() -> None:
         db = firestore_store._db()
         all_files = [d.to_dict() for d in db.collection("wechat_files").stream()]
 
+        TERMINAL_STATUSES = {"product_extracted", "extraction_empty", "extraction_failed"}
         needs_extraction = [
             f for f in all_files
-            if f.get("status") != "product_extracted"
+            if f.get("status") not in TERMINAL_STATUSES
             and f.get("file_extension", "") in EXTRACTABLE_EXTS
             and f.get("file_type", "") in EXTRACTABLE_TYPES
             and f.get("file_size_bytes", 0) < 100 * 1024 * 1024
@@ -261,6 +276,18 @@ def main() -> None:
                 logger.info("Category enrichment done")
         except Exception as e:
             logger.warning("Category enrichment failed: %s", e)
+
+        # --- Phase 2c: Auto-organize into Category/Vendor/YYYY-MM-DD layout ---
+        try:
+            from scripts.organize_downloads import organize_all
+            result = organize_all(
+                apply=True, move=True, update_firestore=True,
+                only_unorganized=True, write_plan_csv=False, logger=logger,
+            )
+            if result["done"]:
+                logger.info("Phase 2c: organized %d files", result["done"])
+        except Exception as e:
+            logger.warning("Auto-organize failed: %s", e)
 
         # --- Phase 3: Rebuild vendor collection ---
         all_files = [d.to_dict() for d in db.collection("wechat_files").stream()]

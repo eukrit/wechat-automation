@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WeChat Automation — Docs Hub</title>
+<style>
+  :root {
+    --bg: #f7f7f9;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #555;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --border: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+    margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5;
+  }
+  header {
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    color: white; padding: 48px 32px 56px;
+  }
+  header h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -0.5px; }
+  header .sub { opacity: 0.85; font-size: 15px; }
+  main { max-width: 1180px; margin: -24px auto 48px; padding: 0 24px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px;
+    margin-bottom: 32px;
+  }
+  .tile {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; text-decoration: none; color: inherit; display: block;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.15);
+    border-color: var(--accent);
+  }
+  .tile .icon { font-size: 26px; margin-bottom: 10px; }
+  .tile .label {
+    display: inline-block; background: var(--accent-soft); color: var(--accent);
+    padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px;
+  }
+  .tile h3 { margin: 4px 0 8px; font-size: 17px; }
+  .tile p { margin: 0; color: var(--muted); font-size: 14px; }
+  .tile .arrow { display: inline-block; margin-top: 12px; color: var(--accent); font-weight: 600; font-size: 14px; }
+  h2 { margin: 8px 0 14px; font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0; }
+  code { font-family: "SF Mono", Consolas, Menlo, monospace; font-size: 12px;
+         background: rgba(255,255,255,0.15); padding: 1px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>WeChat Automation — Docs Hub</h1>
+  <div class="sub">All dashboards, reports, and references for the <code>wechat-automation</code> system</div>
+</header>
+
+<main>
+
+<h2>Live dashboards</h2>
+<div class="grid">
+  <a class="tile" href="/">
+    <div class="icon">🔎</div>
+    <div class="label">App</div>
+    <h3>Product Browser</h3>
+    <p>Faceted search across all extracted products. Filter by vendor, category, subcategory. Sort by price, name, date.</p>
+    <div class="arrow">Open app →</div>
+  </a>
+  <a class="tile" href="/sync-report">
+    <div class="icon">📊</div>
+    <div class="label">Dashboard</div>
+    <h3>Sync Report</h3>
+    <p>Recent sync runs, file status / type / extension breakdown, and the last 200 lines of <code style="background:#f1f5f9;color:#0f172a">sync.log</code>.</p>
+    <div class="arrow">View report →</div>
+  </a>
+  <a class="tile" href="/api/stats">
+    <div class="icon">📈</div>
+    <div class="label">API</div>
+    <h3>Stats JSON</h3>
+    <p>Raw counts: total vendors, files, products. For scripts and dashboards.</p>
+    <div class="arrow">Fetch JSON →</div>
+  </a>
+</div>
+
+<h2>Documentation</h2>
+<div class="grid">
+  <a class="tile" href="/docs/workflow.html">
+    <div class="icon">🧭</div>
+    <div class="label">Reference</div>
+    <h3>Workflow &amp; Data Model</h3>
+    <p>Sync pipeline phases (Ingest → Extract → Enrich → Organize → Vendors → Status), Firestore collections, cross-DB FKs, file status lifecycle, storage, and script catalog.</p>
+    <div class="arrow">Read →</div>
+  </a>
+  <a class="tile" href="/docs/build-summary.html">
+    <div class="icon">📦</div>
+    <div class="label">Changelog</div>
+    <h3>Build Summary</h3>
+    <p>Per-release summary generated from <code style="background:#f1f5f9;color:#0f172a">CHANGELOG.md</code>. Current: v0.10.0 (UTF-8 logging, auto-organize, /sync-report).</p>
+    <div class="arrow">View builds →</div>
+  </a>
+  <a class="tile" href="https://github.com/eukrit/wechat-automation" target="_blank" rel="noopener">
+    <div class="icon">💻</div>
+    <div class="label">Source</div>
+    <h3>GitHub Repo</h3>
+    <p><code style="background:#f1f5f9;color:#0f172a">eukrit/wechat-automation</code> — pipeline, web app, extractors, scripts.</p>
+    <div class="arrow">Open repo ↗</div>
+  </a>
+</div>
+
+<h2>Pipeline APIs</h2>
+<div class="grid">
+  <a class="tile" href="/api/filters">
+    <div class="icon">🏷️</div>
+    <div class="label">API</div>
+    <h3>Filters</h3>
+    <p>Vendors, categories, subcategories with cross-reference metadata.</p>
+    <div class="arrow">Fetch JSON →</div>
+  </a>
+  <a class="tile" href="/api/products">
+    <div class="icon">🛒</div>
+    <div class="label">API</div>
+    <h3>Products</h3>
+    <p>Faceted product search with sort &amp; pagination. Use query params.</p>
+    <div class="arrow">Fetch JSON →</div>
+  </a>
+  <a class="tile" href="/health">
+    <div class="icon">❤️</div>
+    <div class="label">Health</div>
+    <h3>Liveness</h3>
+    <p>Cloud Run health check endpoint.</p>
+    <div class="arrow">Check →</div>
+  </a>
+</div>
+
+</main>
+
+<footer>
+  <code style="background:#eee;color:#555">ai-agents-go</code> · Cloud Run <code style="background:#eee;color:#555">asia-southeast1</code> · Firestore DB <code style="background:#eee;color:#555">wechat-documents</code>
+</footer>
+
+</body>
+</html>
