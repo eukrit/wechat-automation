@@ -1,0 +1,10 @@
+{
+  "LIVE_URL_BASE": "",
+  "hub": {
+    "live": { "enabled": false },
+    "exclude": [],
+    "extra_links": [],
+    "section_order": ["essentials","dashboards","reports","forms","summaries","documents","catalogs","other","live_urls","related"],
+    "classification_overrides": {}
+  }
+}
