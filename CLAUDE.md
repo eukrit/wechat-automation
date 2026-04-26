@@ -55,6 +55,18 @@ Do NOT store credentials in code or commits.
 
 ---
 
+## Page Hosting (Rule 14)
+
+All HTML pages, dashboards, summaries, and forms in this project are served via the **`go-access-gateway`** at `https://gateway.goco.bz/p/wechat-automation/...` — NOT directly from this project's Cloud Run URL.
+
+- **Public URL pattern:** `https://gateway.goco.bz/p/wechat-automation/<path>`
+- **Backend Cloud Run service:** must be `--no-allow-unauthenticated`. The gateway SA `claude@ai-agents-go.iam.gserviceaccount.com` is granted `roles/run.invoker` on this service.
+- **Default page visibility:** `admin` (only `eukrit@goco.bz`). Toggle public, or share with specific emails, via the [gateway admin UI](https://gateway.goco.bz/admin).
+- **Hub link target:** `hub.config.json` `LIVE_URL_BASE` should be `https://gateway.goco.bz/p/wechat-automation`.
+- **Migration status:** see Phase D of the rollout plan at `~/.claude/plans/go-through-all-projects-structured-cherny.md`. Until migrated, this project's Cloud Run is still public.
+
+Hard rules: no `--allow-unauthenticated` on this project's Cloud Run after migration. No public GCS buckets for HTML. No bypass auth in the backend. Full text: Rule 14 in `Credentials Claude Code/Instructions/Claude Process Standards.md`.
+
 ## Claude Process Standards (MANDATORY)
 
 Full reference: `Credentials Claude Code/Instructions/Claude Process Standards.md`
