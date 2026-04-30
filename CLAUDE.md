@@ -57,12 +57,22 @@ Do NOT store credentials in code or commits.
 
 ## Page Hosting (Rule 14)
 
-All HTML pages, dashboards, summaries, and forms in this project are served via the **`go-access-gateway`** at `https://gateway.goco.bz/p/wechat-automation/...` — NOT directly from this project's Cloud Run URL.
+> **Rule 14a — Exclusive hosting.** All generated non-website HTML for this project (dashboards, reports, summaries, forms, documents, hub, build-summary, architecture) is served exclusively at `https://gateway.goco.bz/wechat-automation/<path>`. Do not link, share, or reference raw `*.run.app`, `storage.googleapis.com`, `raw.githubusercontent.com`, or `eukrit.github.io` URLs anywhere a reader will see (BUILD_LOGs, hub configs, READMEs, chat).
+>
+> **Rule 14b — Project root = hub.** `https://gateway.goco.bz/wechat-automation/` (and `https://gateway.goco.bz/wechat-automation` with no slash) resolves to this project's `docs/hub.html` for every backend kind. The slug catchall in `go-access-gateway/services/access_gateway/routes/pages.py` normalizes the empty path. Keep `docs/hub.html` fresh per Rule 13f — `verify.sh` blocks any push that leaves it stale.
+>
+> **Canonical paths** (must always work, mirroring `gateway.goco.bz/directory`):
+> - `https://gateway.goco.bz/wechat-automation/docs/hub.html` — Hub
+> - `https://gateway.goco.bz/wechat-automation/docs/build-summary.html` — Build Summary
+> - `https://gateway.goco.bz/wechat-automation/docs/architecture.html` — Architecture
+> - `https://gateway.goco.bz/wechat-automation/BUILD_LOG.md` — Build Log
 
-- **Public URL pattern:** `https://gateway.goco.bz/p/wechat-automation/<path>`
+All HTML pages, dashboards, summaries, and forms in this project are served via the **`go-access-gateway`** at `https://gateway.goco.bz/wechat-automation/...` — NOT directly from this project's Cloud Run URL.
+
+- **Public URL pattern:** `https://gateway.goco.bz/wechat-automation/<path>`
 - **Backend Cloud Run service:** must be `--no-allow-unauthenticated`. The gateway SA `claude@ai-agents-go.iam.gserviceaccount.com` is granted `roles/run.invoker` on this service.
 - **Default page visibility:** `admin` (only `eukrit@goco.bz`). Toggle public, or share with specific emails, via the [gateway admin UI](https://gateway.goco.bz/admin).
-- **Hub link target:** `hub.config.json` `LIVE_URL_BASE` should be `https://gateway.goco.bz/p/wechat-automation`.
+- **Hub link target:** `hub.config.json` `LIVE_URL_BASE` should be `https://gateway.goco.bz/wechat-automation`.
 - **Migration status:** see Phase D of the rollout plan at `~/.claude/plans/go-through-all-projects-structured-cherny.md`. Until migrated, this project's Cloud Run is still public.
 
 Hard rules: no `--allow-unauthenticated` on this project's Cloud Run after migration. No public GCS buckets for HTML. No bypass auth in the backend. Full text: Rule 14 in `Credentials Claude Code/Instructions/Claude Process Standards.md`.
