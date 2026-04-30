@@ -65,3 +65,16 @@ Full reference: `Credentials Claude Code/Instructions/Claude Process Standards.m
 3. **Plan in batches; run them as one chained autonomous pass** — group todos into batches, surface the plan once, then execute every batch back-to-back in a single run. No turn-taking between todos or batches. Run long work with `run_in_background: true`; parallelize independent tool calls. Only stop for true blockers: destructive/unauthorized actions, missing credentials, genuine ambiguity, unrecoverable external errors, or explicit user confirmation request.
 4. **Always update `build-summary.html` at THIS project's root** for every build/version (template: `Credentials Claude Code/Instructions/build-summary.template.html`). Per-project — DO NOT write into `business-automation/`. Touch the workspace dashboard at `business-automation/docs/index.html` only for cross-project / architecture changes.
 5. **Always commit and push — verify repo mapping first** — run `git remote -v` and confirm the remote repo name matches the local folder name (per the Code Sync Rules in the root `CLAUDE.md`). If mismatch (especially `goco-project-template`), STOP and ask the user. Never push to the wrong repo.
+
+## Page Hosting (Rule 14)
+
+> **Rule 14a — Exclusive hosting.** All generated non-website HTML for this project (dashboards, reports, summaries, forms, documents, hub, build-summary, architecture) is served exclusively at `https://gateway.goco.bz/wechat-automation/<path>`. Do not link, share, or reference raw `*.run.app`, `storage.googleapis.com`, `raw.githubusercontent.com`, or `eukrit.github.io` URLs anywhere a reader will see (BUILD_LOGs, hub configs, READMEs, chat).
+>
+> **Rule 14b — Project root = hub.** `https://gateway.goco.bz/wechat-automation/` (and `https://gateway.goco.bz/wechat-automation` with no slash) resolves to this project's `docs/hub.html` for every backend kind. The slug catchall in `go-access-gateway/services/access_gateway/routes/pages.py` normalizes the empty path. Keep `docs/hub.html` fresh per Rule 13f — `verify.sh` blocks any push that leaves it stale.
+>
+> **Canonical paths** (must always work, mirroring `gateway.goco.bz/directory`):
+> - `https://gateway.goco.bz/wechat-automation/docs/hub.html` — Hub
+> - `https://gateway.goco.bz/wechat-automation/docs/build-summary.html` — Build Summary
+> - `https://gateway.goco.bz/wechat-automation/docs/architecture.html` — Architecture
+> - `https://gateway.goco.bz/wechat-automation/BUILD_LOG.md` — Build Log
+
