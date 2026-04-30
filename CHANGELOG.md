@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.10.0 — 2026-04-22
+
+### Added
+- `scripts/verify_coverage.py` — walks both watched roots, hashes every watched file, compares to Firestore. Writes `coverage_report.csv`. Confirmed 566/566 captured (0 missing, 0 orphaned).
+- `scripts/organize_downloads.py` — plans/executes reorg into `WeChat Auto Downloads/<Category>/<Vendor>/YYYY-MM-DD_<filename>`. Dry-run by default; `--apply` copies, `--apply --move` moves, `--update-firestore` persists `organized_path`. Sanitizes Windows-forbidden chars, dedupes by SHA-256.
+- `/sync-report` HTML route — recent sync runs, status/type/extension breakdown, last 200 lines of `sync.log`.
+
+### Fixed
+- **UnicodeEncodeError** in `sync_now.py` and `file_watcher.py` — FileHandler now uses `encoding="utf-8"`, stdout/stderr reconfigured. Chinese filenames no longer crash log emit on Windows cp1252.
+- **Empty-extraction re-loop** — files where the extractor returns 0 products (or raises) are now marked `extraction_empty` / `extraction_failed` and skipped next cycle. Previously re-processed every 15 min.
+
+### Files changed
+- `scripts/sync_now.py` — UTF-8 logging, terminal statuses, extended extraction filter.
+- `watcher/file_watcher.py` — UTF-8 FileHandler + stdout/stderr reconfigure.
+- `web/app.py` — new `/sync-report` route.
+- `scripts/verify_coverage.py` (new)
+- `scripts/organize_downloads.py` (new)
+
 ## v0.9.0 — 2026-04-18
 
 ### Added

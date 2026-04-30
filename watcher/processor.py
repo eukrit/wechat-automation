@@ -57,7 +57,16 @@ class FileProcessor:
         file_id = hashlib.sha256(file_bytes).hexdigest()
 
         if firestore_store.file_exists(file_id):
-            logger.debug("Skipping duplicate: %s (%s)", filename, file_id[:12])
+            # Same content may have been moved/organized → reconcile source_path.
+            existing = firestore_store.get_file(file_id)
+            if existing and existing.source_path != str(path):
+                existing.source_path = str(path)
+                if not existing.organized_path:
+                    existing.organized_path = str(path)
+                firestore_store.upsert_file(existing)
+                logger.info("Reconciled path: %s -> %s", file_id[:12], path)
+            else:
+                logger.debug("Skipping duplicate: %s (%s)", filename, file_id[:12])
             return None
 
         logger.info("Processing: %s (%s, %d bytes)", filename, file_id[:12], len(file_bytes))

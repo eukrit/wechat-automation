@@ -20,3 +20,6 @@ venv/
 .claude/debug/
 .claude/downloads/
 .claude/telemetry/
+
+# Hub Page (Rule 13) — generator config must be tracked
+!hub.config.json

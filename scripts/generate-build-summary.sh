@@ -94,7 +94,12 @@ fi
 
 BADGE_CLASS="badge-$LATEST_STATUS"
 
-cat > build-summary.html <<HTMLEOF
+mkdir -p docs
+OUTPUT_PATH="docs/build-summary.html"
+# Backwards compatibility: if a legacy root build-summary.html exists from a pre-Rule-13
+# build, remove it once we've written the new location (Rule 13 requires docs-only layout).
+LEGACY_PATH="build-summary.html"
+cat > "$OUTPUT_PATH" <<HTMLEOF
 <!doctype html>
 <html lang="en">
 <head>
@@ -153,4 +158,8 @@ $ROWS
 </html>
 HTMLEOF
 
-echo "[OK] build-summary.html regenerated ($(wc -l < build-summary.html) lines)"
+if [ -f "$LEGACY_PATH" ]; then
+  rm "$LEGACY_PATH"
+  echo "[CLEANUP] removed legacy $LEGACY_PATH (Rule 13 — build-summary lives in docs/)"
+fi
+echo "[OK] $OUTPUT_PATH regenerated ($(wc -l < "$OUTPUT_PATH") lines)"

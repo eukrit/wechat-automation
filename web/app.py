@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 # Add parent for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,8 +25,19 @@ PROJECT = os.environ.get("GCP_PROJECT_ID", "ai-agents-go")
 DATABASE = os.environ.get("FIRESTORE_DATABASE", "wechat-documents")
 BUCKET = os.environ.get("GCS_BUCKET", "wechat-documents-attachments")
 
-app = FastAPI(title="WeChat Products Browser")
+app = FastAPI(title="WeChat Products Browser", docs_url=None, redoc_url=None)
 web_dir = Path(__file__).parent
+
+# Serve consolidated static docs hub at /docs/*
+_static_dir = web_dir / "static"
+if _static_dir.exists():
+    app.mount("/docs", StaticFiles(directory=str(_static_dir / "docs"), html=True), name="docs")
+
+
+@app.get("/hub")
+async def hub_redirect():
+    """Short alias for the docs hub landing page."""
+    return RedirectResponse(url="/docs/")
 
 _db_cache: dict[str, firestore.Client] = {}
 
@@ -482,6 +494,124 @@ async def stats():
         "total_files": files_count,
         "total_products": products_count,
     })
+
+
+@app.get("/sync-report", response_class=HTMLResponse)
+async def sync_report():
+    """HTML report: recent sync runs, file status breakdown, tail of sync.log."""
+    from collections import Counter
+    from datetime import datetime, timezone
+    import html as _html
+
+    runs = []
+    try:
+        q = (
+            db().collection("sync_status")
+            .order_by("started_at", direction=firestore.Query.DESCENDING)
+            .limit(20)
+        )
+        for d in q.stream():
+            runs.append(d.to_dict())
+    except Exception as e:
+        runs = [{"error": str(e)}]
+
+    status_counts: Counter = Counter()
+    type_counts: Counter = Counter()
+    ext_counts: Counter = Counter()
+    total = 0
+    for d in db().collection("wechat_files").stream():
+        f = d.to_dict()
+        status_counts[f.get("status", "unknown")] += 1
+        type_counts[f.get("file_type", "other")] += 1
+        ext_counts[f.get("file_extension", "") or "(none)"] += 1
+        total += 1
+
+    log_tail = ""
+    log_path = Path(os.path.expanduser("~")) / ".wechat-automation" / "sync.log"
+    if log_path.exists():
+        try:
+            with log_path.open("r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.readlines()[-200:]
+            log_tail = "".join(lines)
+        except Exception as e:
+            log_tail = f"(error reading log: {e})"
+
+    def _fmt_dt(v):
+        if not v:
+            return ""
+        if isinstance(v, datetime):
+            return v.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        return str(v)
+
+    rows = []
+    for r in runs:
+        if "error" in r:
+            rows.append(f"<tr><td colspan='8'>Error: {_html.escape(r['error'])}</td></tr>")
+            continue
+        rows.append(
+            "<tr>"
+            f"<td>{_html.escape(r.get('sync_id',''))}</td>"
+            f"<td>{_html.escape(r.get('status',''))}</td>"
+            f"<td>{_fmt_dt(r.get('started_at'))}</td>"
+            f"<td>{_fmt_dt(r.get('completed_at'))}</td>"
+            f"<td style='text-align:right'>{r.get('files_new',0)}</td>"
+            f"<td style='text-align:right'>{r.get('files_extracted',0)}</td>"
+            f"<td style='text-align:right'>{r.get('products_new',0)}</td>"
+            f"<td style='text-align:right'>{r.get('extraction_errors',0)}</td>"
+            "</tr>"
+        )
+    runs_table = "\n".join(rows) or "<tr><td colspan='8'>No runs yet</td></tr>"
+
+    def _counter_table(c: Counter) -> str:
+        items = sorted(c.items(), key=lambda kv: -kv[1])
+        return "\n".join(
+            f"<tr><td>{_html.escape(str(k))}</td><td style='text-align:right'>{v}</td></tr>"
+            for k, v in items
+        )
+
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>WeChat Sync Report</title>
+<style>
+ body {{ font-family: -apple-system, Segoe UI, sans-serif; margin: 24px; color:#222; }}
+ h1 {{ margin-top: 0; }}
+ h2 {{ margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }}
+ table {{ border-collapse: collapse; margin-bottom: 16px; }}
+ th, td {{ border: 1px solid #ddd; padding: 6px 10px; font-size: 13px; }}
+ th {{ background: #f4f4f4; text-align: left; }}
+ .grid {{ display: grid; grid-template-columns: repeat(3, minmax(240px, 1fr)); gap: 16px; }}
+ pre {{ background: #0e1116; color: #d4d4d4; padding: 12px; border-radius: 6px;
+        max-height: 500px; overflow: auto; font-size: 12px; white-space: pre-wrap; }}
+ .kpi {{ display: inline-block; margin-right: 24px; padding: 12px 16px;
+        background: #f7f7f9; border-radius: 8px; }}
+ .kpi b {{ font-size: 22px; display: block; }}
+</style></head><body>
+<h1>WeChat Automation — Sync Report</h1>
+<div>
+  <span class="kpi"><b>{total}</b> total files</span>
+  <span class="kpi"><b>{status_counts.get('product_extracted',0)}</b> extracted</span>
+  <span class="kpi"><b>{status_counts.get('extraction_empty',0)}</b> empty</span>
+  <span class="kpi"><b>{status_counts.get('extraction_failed',0)}</b> failed</span>
+  <span class="kpi"><b>{status_counts.get('needs_vendor_link',0)}</b> need vendor</span>
+</div>
+
+<h2>Recent sync runs (last 20)</h2>
+<table>
+ <tr><th>sync_id</th><th>status</th><th>started</th><th>completed</th>
+     <th>new files</th><th>extracted</th><th>products</th><th>errors</th></tr>
+ {runs_table}
+</table>
+
+<h2>File breakdown</h2>
+<div class="grid">
+ <div><h3>By status</h3><table><tr><th>status</th><th>count</th></tr>{_counter_table(status_counts)}</table></div>
+ <div><h3>By type</h3><table><tr><th>type</th><th>count</th></tr>{_counter_table(type_counts)}</table></div>
+ <div><h3>By extension</h3><table><tr><th>ext</th><th>count</th></tr>{_counter_table(ext_counts)}</table></div>
+</div>
+
+<h2>sync.log (last 200 lines)</h2>
+<pre>{_html.escape(log_tail) or '(log file not available in this environment)'}</pre>
+</body></html>"""
+    return HTMLResponse(html)
 
 
 @app.get("/health")

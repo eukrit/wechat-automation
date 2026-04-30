@@ -55,6 +55,9 @@ class WeChatFile(BaseModel):
     gcs_path: str = ""  # gs://wechat-documents-attachments/...
     content_type: str = "application/octet-stream"
 
+    # Local organized path (Category/Vendor/YYYY-MM-DD_filename layout)
+    organized_path: str = ""
+
     # Processing status
     status: str = "ingested"  # ingested | classified | vendor_linked | product_extracted | needs_vendor_link
     processing_errors: list[str] = Field(default_factory=list)
