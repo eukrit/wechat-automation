@@ -105,6 +105,6 @@ Terminal statuses (skipped on subsequent sync cycles): `product_extracted`, `ext
 
 ## Credentials
 
-- Service account key: `Credentials Claude Code/ai-agents-go-9b4219be8c01.json`
+- Service account key: `Credentials Claude Code/ai-agents-go-0d28f3991b7b.json`
 - Env var: `GOOGLE_APPLICATION_CREDENTIALS` (set in `scripts/*.bat`)
 - All live secrets: GCP Secret Manager in `ai-agents-go`.
