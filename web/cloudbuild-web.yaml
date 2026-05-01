@@ -37,7 +37,7 @@ steps:
       - 'claude@$PROJECT_ID.iam.gserviceaccount.com'
       - '--set-env-vars'
       - 'GCP_PROJECT_ID=ai-agents-go,FIRESTORE_DATABASE=wechat-documents,GCS_BUCKET=wechat-documents-attachments'
-      - '--allow-unauthenticated'
+      - '--no-allow-unauthenticated'
       - '--memory'
       - '512Mi'
       - '--cpu'
