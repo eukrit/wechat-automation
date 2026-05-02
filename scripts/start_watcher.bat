@@ -1,5 +1,11 @@
 @echo off
-REM WeChat File Watcher — started by Task Scheduler on login
-set GOOGLE_APPLICATION_CREDENTIALS=C:\Users\eukri\OneDrive\Documents\Claude Code\Credentials Claude Code\ai-agents-go-4c81b70995db.json
+REM Requires GOOGLE_APPLICATION_CREDENTIALS set in your environment (load via .env
+REM or `gcloud auth application-default login`). Per workspace SOP Rule 12b, no
+REM hardcoded SA-key filenames in code.
+if not defined GOOGLE_APPLICATION_CREDENTIALS (
+  echo ERROR: GOOGLE_APPLICATION_CREDENTIALS is not set. 1>&2
+  echo Set it in your .env or run: gcloud auth application-default login 1>&2
+  exit /b 1
+)
 cd /d "C:\Users\eukri\OneDrive\Documents\Claude Code\wechat-automation"
 python -m watcher.file_watcher
